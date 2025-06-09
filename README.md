@@ -1,296 +1,37 @@
-# rCore-Tutorial-v3
-rCore-Tutorial version 3.6. See the [Documentation in Chinese](https://rcore-os.github.io/rCore-Tutorial-Book-v3/).
+# 你的太阳落山了-OS大赛代码仓库
 
-rCore-Tutorial API Docs.  See the [API Docs of Ten OSes ](#OS-API-DOCS)
+## 比赛选题：
 
-If you don't know  Rust Language and try to learn it, please visit [Rust Learning Resources](https://github.com/rcore-os/rCore/wiki/study-resource-of-system-programming-in-RUST)
+- 基于优先级的的进程、线程、协程统一调度（好像名字打错了）
+- 具体内容：算了不写了
 
-Official QQ group number: 735045051
+## 开发日志：
 
-## news
-- 23/06/2022: Version 3.6.0 is on the way! Now we directly update the code on chX branches, please periodically check if there are any updates.
+- 2025.6.9：基本实现了用户态协程定义与简单调度，增加用户函数库，调度算法使用大根堆
+- 
 
-## Overview
+## 当前新增模块：
 
-This project aims to show how to write an **Unix-like OS** running on **RISC-V** platforms **from scratch** in **[Rust](https://www.rust-lang.org/)** for **beginners** without any background knowledge about **computer architectures, assembly languages or operating systems**.
+在`\user`中添加了`coroutine`模块，用于定义用户态协程，并实现了简单的调度算法。其中，`Coroutine`类用于定义协程，`Scheduler`类用于调度协程，`Scheduler`类中使用了大根堆算法进行调度。
 
-## Features
+### 特别说明：
+- `CID`还没有写，我考虑其是否有必要写；
+- `Scheduler`类还有点乱，我感觉需要在具体与线程整合后再完善；
+- 测试代码简单的写了一个，而且很丑陋，后面需要很多的封装的函数啊啥的。
 
-* Platform supported: `qemu-system-riscv64` simulator or dev boards based on [Kendryte K210 SoC](https://canaan.io/product/kendryteai) such as [Maix Dock](https://www.seeedstudio.com/Sipeed-MAIX-Dock-p-4815.html)
-* OS
-  * concurrency of multiple processes each of which contains mutiple native threads
-  * preemptive scheduling(Round-Robin algorithm)
-  * dynamic memory management in kernel
-  * virtual memory
-  * a simple file system with a block cache
-  * an interactive shell in the userspace
-* **only 4K+ LoC**
-* [A detailed documentation in Chinese](https://rcore-os.github.io/rCore-Tutorial-Book-v3/) in spite of the lack of comments in the code(English version is not available at present)
+### 主要问题：
+- 锁很sb，改的时候要小心
+- 现在还完全没考虑线程的事情，目前只是封装了一下async和await，不过结合到线程中应该不算麻烦。
 
-## Prerequisites
+## 后续工作：
+我的设计思路是：
 
-### Install Rust
+> 取自微信聊天记录：用户态：实现三个类：`executor`，`coroutine`，`scheduler`，其中executor全局唯一，scheduler是每个线程有一个（？或者全局一个？然后把不同线程中的协程放进去，类似java的虚拟线程池的思想？）在coroutine中有个future：Mutex<Box<dyn Future>>，用来保持要执行的东西。这样在切换的时候我们就不需要考虑它的寄存器啊啥的（因为使用了Future的任务会被转换成状态机嘛）。当然之前的线程的操作啊啥的要进行一些调整。
+内核态：TCB或者是PCB中存一个最大优先级和当前优先级两个参数，然后让时钟中断时想办法从scheduler中传回来着两个参数，然后把线程调度的那个RR改成基于优先级的RR（好像叫多级时间片轮转吧）
+但是这样的问题是协程对内核是不可见的，而且协程还不能支持中断，因为是用的Future，所以实际上咱们自己是没有实现协程的，只不过是用了Rust的协程然后加入到rCore里面了
 
-See [official guide](https://www.rust-lang.org/tools/install).
+不过我现在的代码中`executor`是没有的，我目前不知道是否还需要，因为如果是一个线程一个调度器的话应该就不需要了。
 
-Install some tools:
+后续最紧急的应该是尝试把协程和线程在用户态整合到一起，然后实现抢夺和`yield`（现在直接写一个future也太丑陋了）。
 
-```sh
-$ rustup target add riscv64gc-unknown-none-elf
-$ cargo install cargo-binutils --vers =0.3.3
-$ rustup component add llvm-tools-preview
-$ rustup component add rust-src
-```
-
-### Install Qemu
-
-Here we manually compile and install Qemu 7.0.0. For example, on Ubuntu 18.04:
-
-```sh
-# install dependency packages
-$ sudo apt install autoconf automake autotools-dev curl libmpc-dev libmpfr-dev libgmp-dev \
-              gawk build-essential bison flex texinfo gperf libtool patchutils bc \
-              zlib1g-dev libexpat-dev pkg-config  libglib2.0-dev libpixman-1-dev git tmux python3 python3-pip ninja-build
-# download Qemu source code
-$ wget https://download.qemu.org/qemu-7.0.0.tar.xz
-# extract to qemu-7.0.0/
-$ tar xvJf qemu-7.0.0.tar.xz
-$ cd qemu-7.0.0
-# build
-$ ./configure --target-list=riscv64-softmmu,riscv64-linux-user
-$ make -j$(nproc)
-```
-
-Then, add following contents to `~/.bashrc`(please adjust these paths according to your environment):
-
-```
-export PATH=$PATH:/path/to/qemu-7.0.0/build
-```
-
-Finally, update the current shell:
-
-```sh
-$ source ~/.bashrc
-```
-
-Now we can check the version of Qemu:
-
-```sh
-$ qemu-system-riscv64 --version
-QEMU emulator version 7.0.0
-Copyright (c) 2003-2020 Fabrice Bellard and the QEMU Project developers
-```
-
-### Install RISC-V GNU Embedded Toolchain(including GDB)
-
-Download the compressed file according to your platform From [Sifive website](https://www.sifive.com/software)(Ctrl+F 'toolchain').
-
-Extract it and append the location of the 'bin' directory under its root directory to `$PATH`.
-
-For example, we can check the version of GDB:
-
-```sh
-$ riscv64-unknown-elf-gdb --version
-GNU gdb (SiFive GDB-Metal 10.1.0-2020.12.7) 10.1
-Copyright (C) 2020 Free Software Foundation, Inc.
-License GPLv3+: GNU GPL version 3 or later <http://gnu.org/licenses/gpl.html>
-This is free software: you are free to change and redistribute it.
-There is NO WARRANTY, to the extent permitted by law.
-```
-
-### Install serial tools(Optional, if you want to run on K210)
-
-```sh
-$ pip3 install pyserial
-$ sudo apt install python3-serial
-```
-
-## Run our project
-
-### Qemu
-
-```sh
-$ git clone https://github.com/rcore-os/rCore-Tutorial-v3.git
-$ cd rCore-Tutorial-v3/os
-$ make run
-```
-
-After outputing some debug messages, the kernel lists all the applications available and enter the user shell:
-
-```
-/**** APPS ****
-mpsc_sem
-usertests
-pipetest
-forktest2
-cat
-initproc
-race_adder_loop
-threads_arg
-race_adder_mutex_spin
-race_adder_mutex_blocking
-forktree
-user_shell
-huge_write
-race_adder
-race_adder_atomic
-threads
-stack_overflow
-filetest_simple
-forktest_simple
-cmdline_args
-run_pipe_test
-forktest
-matrix
-exit
-fantastic_text
-sleep_simple
-yield
-hello_world
-pipe_large_test
-sleep
-phil_din_mutex
-**************/
-Rust user shell
->> 
-```
-
-You can run any application except for `initproc` and `user_shell` itself. To run an application, just input its filename and hit enter. `usertests` can run a bunch of applications, thus it is recommended.
-
-Type `Ctrl+a` then `x` to exit Qemu.
-
-### K210
-
-Before chapter 6, you do not need a SD card:
-
-```sh
-$ git clone https://github.com/rcore-os/rCore-Tutorial-v3.git
-$ cd rCore-Tutorial-v3/os
-$ make run BOARD=k210
-```
-
-From chapter 6, before running the kernel, we should insert a SD card into PC and manually write the filesystem image to it:
-
-```sh
-$ cd rCore-Tutorial-v3/os
-$ make sdcard
-```
-
-By default it will overwrite the device `/dev/sdb` which is the SD card, but you can provide another location. For example, `make sdcard SDCARD=/dev/sdc`.
-
-After that, remove the SD card from PC and insert it to the slot of K210. Connect the K210 to PC and then:
-
-```sh
-$ git clone https://github.com/rcore-os/rCore-Tutorial-v3.git
-$ cd rCore-Tutorial-v3/os
-$ make run BOARD=k210
-```
-
-Type `Ctrl+]` to disconnect from K210.
-
-
-## Show runtime debug info of OS kernel version
-The branch of ch9-log contains a lot of debug info. You could try to run rcore tutorial 
-for understand the internal behavior of os kernel.
-
-```sh
-$ git clone https://github.com/rcore-os/rCore-Tutorial-v3.git
-$ cd rCore-Tutorial-v3/os
-$ git checkout ch9-log
-$ make run
-......
-[rustsbi] RustSBI version 0.2.0-alpha.10, adapting to RISC-V SBI v0.3
-.______       __    __      _______.___________.  _______..______   __
-|   _  \     |  |  |  |    /       |           | /       ||   _  \ |  |
-|  |_)  |    |  |  |  |   |   (----`---|  |----`|   (----`|  |_)  ||  |
-|      /     |  |  |  |    \   \       |  |      \   \    |   _  < |  |
-|  |\  \----.|  `--'  |.----)   |      |  |  .----)   |   |  |_)  ||  |
-| _| `._____| \______/ |_______/       |__|  |_______/    |______/ |__|
-
-[rustsbi] Implementation: RustSBI-QEMU Version 0.0.2
-[rustsbi-dtb] Hart count: cluster0 with 1 cores
-[rustsbi] misa: RV64ACDFIMSU
-[rustsbi] mideleg: ssoft, stimer, sext (0x222)
-[rustsbi] medeleg: ima, ia, bkpt, la, sa, uecall, ipage, lpage, spage (0xb1ab)
-[rustsbi] pmp0: 0x10000000 ..= 0x10001fff (rw-)
-[rustsbi] pmp1: 0x2000000 ..= 0x200ffff (rw-)
-[rustsbi] pmp2: 0xc000000 ..= 0xc3fffff (rw-)
-[rustsbi] pmp3: 0x80000000 ..= 0x8fffffff (rwx)
-[rustsbi] enter supervisor 0x80200000
-[KERN] rust_main() begin
-[KERN] clear_bss() begin
-[KERN] clear_bss() end
-[KERN] mm::init() begin
-[KERN] mm::init_heap() begin
-[KERN] mm::init_heap() end
-[KERN] mm::init_frame_allocator() begin
-[KERN] mm::frame_allocator::lazy_static!FRAME_ALLOCATOR begin
-......
-```
-
-## Rustdoc
-
-Currently it can only help you view the code since only a tiny part of the code has been documented.
-
-You can open a doc html of `os` using `cargo doc --no-deps --open` under `os` directory.
-
-### OS-API-DOCS
-The API Docs for Ten OS
-1. [Lib-OS API doc](https://rcore-os.github.io/rCore-Tutorial-v3/ch1/os/index.html)
-1. [Batch-OS API doc](https://rcore-os.github.io/rCore-Tutorial-v3/ch2/os/index.html)
-1. [MultiProg-OS API doc](https://rcore-os.github.io/rCore-Tutorial-v3/ch3-coop/os/index.html)
-1. [TimeSharing-OS API doc](https://rcore-os.github.io/rCore-Tutorial-v3/ch3/os/index.html)
-1. [AddrSpace-OS API doc](https://rcore-os.github.io/rCore-Tutorial-v3/ch4/os/index.html)
-1. [Process-OS API doc](https://rcore-os.github.io/rCore-Tutorial-v3/ch5/os/index.html)
-1. [FileSystem-OS API doc](https://rcore-os.github.io/rCore-Tutorial-v3/ch6/os/index.html)
-1. [IPC-OS API doc](https://rcore-os.github.io/rCore-Tutorial-v3/ch7/os/index.html)
-1. [SyncMutex-OS API doc](https://rcore-os.github.io/rCore-Tutorial-v3/ch8/os/index.html)
-1. [IODevice-OS API doc](https://rcore-os.github.io/rCore-Tutorial-v3/ch9/os/index.html)
-
-#### [OS API chinese doc](https://github.com/rcore-os/rCore-Tutorial-v3-api-doc/blob/main/rCore-Tutorial-v3.md)
-
-## Working in progress
-
-Our first release 3.6.0 (chapter 1-9) has been published, and we are still working on it.
-
-* chapter 9: need more descripts about different I/O devices
-
-Here are the updates since 3.5.0:
-
-### Completed
-
-* [x] automatically clean up and rebuild before running our project on a different platform
-* [x] fix `power` series application in early chapters, now you can find modulus in the output
-* [x] use `UPSafeCell` instead of `RefCell` or `spin::Mutex` in order to access static data structures and adjust its API so that it cannot be borrowed twice at a time(mention `& .exclusive_access().task[0]` in `run_first_task`)
-* [x] move `TaskContext` into `TaskControlBlock` instead of restoring it in place on kernel stack(since ch3), eliminating annoying `task_cx_ptr2`
-* [x] replace `llvm_asm!` with `asm!`
-* [x] expand the fs image size generated by `rcore-fs-fuse` to 128MiB
-* [x] add a new test named `huge_write` which evaluates the fs performance(qemu\~500KiB/s k210\~50KiB/s)
-* [x] flush all block cache to disk after a fs transaction which involves write operation
-* [x] replace `spin::Mutex` with `UPSafeCell` before SMP chapter
-* [x] add codes for a new chapter about synchronization & mutual exclusion(uniprocessor only)
-* [x] bug fix: we should call `find_pte` rather than `find_pte_create` in `PageTable::unmap`
-* [x] clarify: "check validity of level-3 pte in `find_pte` instead of checking it outside this function" should not be a bug
-* [x] code of chapter 8: synchronization on a uniprocessor
-* [x] switch the code of chapter 6 and chapter 7
-* [x] support signal mechanism in chapter 7/8(only works for apps with a single thread)
-* [x] Add boards/ directory and support rustdoc, for example you can use `cargo doc --no-deps --open` to view the documentation of a crate
-* [x] code of chapter 9: device drivers based on interrupts, including UART, block, keyboard, mouse, gpu devices
-* [x] add CI autotest and doc in github 
-### Todo(High priority)
-
-* [ ] review documentation, current progress: 8/9
-* [ ] use old fs image optionally, do not always rebuild the image
-* [ ] shell functionality improvement(to be continued...)
-* [ ] give every non-zero process exit code an unique and clear error type
-* [ ] effective error handling of mm module
-* [ ] add more os functions for understanding os conecpts and principles
-### Todo(Low priority)
-
-* [ ] rewrite practice doc and remove some inproper questions
-* [ ] provide smooth debug experience at a Rust source code level
-* [ ] format the code using official tools
-
-### Crates
-
-We will add them later.
+# 大概就这些
