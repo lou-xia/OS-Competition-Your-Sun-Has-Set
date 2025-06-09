@@ -11,6 +11,7 @@ mod net;
 mod sync;
 mod syscall;
 mod task;
+mod coroutine;
 
 extern crate alloc;
 #[macro_use]
@@ -26,6 +27,8 @@ pub use net::*;
 pub use sync::*;
 use syscall::*;
 pub use task::*;
+
+pub use crate::coroutine::test_for_coroutine;
 
 const USER_HEAP_SIZE: usize = 32768;
 
