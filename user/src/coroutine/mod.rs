@@ -1,12 +1,11 @@
 use core::future::Future;
 use core::pin::Pin;
 use core::task::Poll;
-use alloc::boxed::Box;
 use alloc::sync::Arc;
+use runtime::{quit_coroutine_runtime, submit_coroutine, wait_all_coroutines};
 use spin::Mutex;
 
-use crate::coroutine::coroutine::Coroutine;
-use crate::coroutine::scheduler::{start_scheduler, Scheduler};
+use crate::coroutine::scheduler::Scheduler;
 
 pub mod coroutine;
 pub mod scheduler;
@@ -34,16 +33,23 @@ pub fn test_for_coroutine() {
         }
     };
 
-    // 创建并加入调度器
-    let coro1 = Coroutine::new(Box::pin(future1), 1,  &scheduler.clone());
-    let coro2 = Coroutine::new(Box::pin(future2), 2,  &scheduler.clone());
+    // // 创建并加入调度器
+    // let coro1 = Coroutine::new(Box::pin(future1), 1,  &scheduler.clone());
+    // let coro2 = Coroutine::new(Box::pin(future2), 2,  &scheduler.clone());
 
-    scheduler.lock().submit(coro1.into());
-    scheduler.lock().submit(coro2.into());
+    // scheduler.lock().submit(coro1.into());
+    // scheduler.lock().submit(coro2.into());
 
-    // 启动调度器
-    start_scheduler(scheduler.clone());
-    // Scheduler::run(scheduler.clone());
+    // // 启动调度器
+    // start_scheduler(scheduler.clone());
+    // // Scheduler::run(scheduler.clone());
+
+    submit_coroutine(future1, 1);
+    submit_coroutine(future2, 2);
+
+    wait_all_coroutines();
+    quit_coroutine_runtime();
+
 }
 
 fn dummy_yield() -> impl Future<Output = ()> {

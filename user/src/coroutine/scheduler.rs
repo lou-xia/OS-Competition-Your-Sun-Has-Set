@@ -1,6 +1,4 @@
-use crate::coroutine::{
-    coroutine::{Coroutine, CoroutineInner},
-};
+use crate::{coroutine::coroutine::{Coroutine, CoroutineInner}, yield_};
 use alloc::{collections::binary_heap::BinaryHeap, sync::Arc, vec::Vec};
 use core::task::{Context, Poll, RawWaker, RawWakerVTable, Waker};
 use spin::Mutex;
@@ -8,6 +6,7 @@ use spin::Mutex;
 pub struct Scheduler {
     pub queue: BinaryHeap<Arc<Coroutine>>,
     pub pending_tasks: Vec<Arc<Coroutine>>,
+    quitting: bool,
 }
 
 impl Scheduler {
@@ -15,6 +14,7 @@ impl Scheduler {
         Self {
             queue: BinaryHeap::new(),
             pending_tasks: Vec::new(),
+            quitting: false,
         }
     }
 
@@ -29,6 +29,11 @@ impl Scheduler {
     pub fn run(scheduler: Arc<Mutex<Self>>) {
         loop {
             let mut sched = scheduler.lock();
+            // 如果正在退出，则不再调度
+            if sched.quitting {
+                println!("Scheduler is quitting, no more tasks will be scheduled.");
+                break;
+            }
             while let Some(pending) = sched.pending_tasks.pop() {
                 sched.spawn(pending);
             }
@@ -37,7 +42,8 @@ impl Scheduler {
 
             let Some(coroutine) = coroutine 
               else { 
-                break 
+                yield_(); // 如果没有任务，则让出CPU
+                continue;
             };
             // TODO: 应该打印的是cid，而不是priority，由于目前CidAllocator还没有实现，先用priority调试
             println!("coroutine {} running", coroutine.inner.priority);
@@ -72,6 +78,24 @@ impl Scheduler {
             while let Some(pending) = self.pending_tasks.pop() {
                 self.spawn(pending);
             }
+        }
+    }
+
+    // 返回当前调度器中的任务数量
+    pub fn task_count(&self) -> usize {
+        self.queue.len() + self.pending_tasks.len()
+    }
+
+    // 关闭调度器
+    pub fn quit(&mut self) {
+        self.quitting = true;
+    }
+
+    // 外部调用的等待方法
+    pub fn wait(&mut self) {
+        // 等待所有任务完成
+        while !self.queue.is_empty() || !self.pending_tasks.is_empty() {
+            yield_();
         }
     }
 }
