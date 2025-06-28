@@ -1,10 +1,10 @@
 use alloc::{sync::Arc, vec::Vec};
-use spin::{Mutex, MutexGuard};
+use spin::Mutex;
 use lazy_static::lazy_static;
 
-use crate::{thread_create, waittid, yield_};
+use crate::{exit, thread_create, waittid, yield_};
 
-use super::{coroutine::Coroutine, scheduler::{self, Scheduler}};
+use super::{coroutine::Coroutine, scheduler::Scheduler};
 
 // 协程运行时的默认线程数
 const DEFAULT_THREAD_NUM: usize = 4;
@@ -16,6 +16,7 @@ lazy_static! {
 
 // 协程运行时, 包含若干个线程, 每个线程有一个调度器
 struct CoroutineRuntime {
+    #[allow(dead_code)]
     thread_num: usize,
     schedulers: Vec<Arc<Mutex<Scheduler>>>,
     threads: Vec<usize>,
@@ -59,6 +60,7 @@ impl CoroutineRuntime {
         // 从指针中获取调度器
         let scheduler = unsafe { Arc::from_raw(scheduler_ptr as *const _) };
         Scheduler::run(scheduler);
+        exit(0); // 线程结束时退出
     }
 
     // 提交协程到运行时

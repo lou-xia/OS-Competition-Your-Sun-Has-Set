@@ -1,4 +1,4 @@
-use crate::{coroutine::coroutine::{Coroutine, CoroutineInner}, exit, yield_};
+use crate::{coroutine::coroutine::{Coroutine, CoroutineInner}, yield_};
 use alloc::{collections::binary_heap::BinaryHeap, sync::Arc, vec::Vec};
 use core::{ops::Add, task::{Context, Poll, RawWaker, RawWakerVTable, Waker}};
 use spin::Mutex;
@@ -74,7 +74,6 @@ impl Scheduler {
                 *remain = remain.saturating_sub(1);
             }
         }
-        exit(0);
     }
 
     #[allow(dead_code)]
@@ -144,8 +143,4 @@ const VTABLE: RawWakerVTable = RawWakerVTable::new(clone_waker, wake, wake_by_re
 pub fn create_waker(inner: Arc<CoroutineInner>) -> Waker {
     let raw = RawWaker::new(Arc::into_raw(inner) as *const (), &VTABLE);
     unsafe { Waker::from_raw(raw) }
-}
-
-pub fn start_scheduler(scheduler: Arc<Mutex<Scheduler>>) {
-    Scheduler::run(scheduler);
 }

@@ -1,10 +1,6 @@
 use core::future::Future;
 use core::pin::Pin;
 use core::task::Poll;
-use alloc::sync::Arc;
-use spin::Mutex;
-
-use crate::coroutine::scheduler::Scheduler;
 
 pub mod coroutine;
 pub mod scheduler;
