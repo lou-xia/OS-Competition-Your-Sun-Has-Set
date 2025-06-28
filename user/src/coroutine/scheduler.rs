@@ -1,28 +1,36 @@
-use crate::{coroutine::coroutine::{Coroutine, CoroutineInner}, yield_};
+use crate::{coroutine::coroutine::{Coroutine, CoroutineInner}, exit, yield_};
 use alloc::{collections::binary_heap::BinaryHeap, sync::Arc, vec::Vec};
-use core::task::{Context, Poll, RawWaker, RawWakerVTable, Waker};
+use core::{ops::Add, task::{Context, Poll, RawWaker, RawWakerVTable, Waker}};
 use spin::Mutex;
 
 pub struct Scheduler {
     pub queue: BinaryHeap<Arc<Coroutine>>,
     pub pending_tasks: Vec<Arc<Coroutine>>,
     quitting: bool,
+    remaining_tasks: Arc<Mutex<usize>>, // 用于跟踪剩余任务数
 }
 
 impl Scheduler {
-    pub fn new() -> Self {
+    pub fn new(remain: Arc<Mutex<usize>>) -> Self {
         Self {
             queue: BinaryHeap::new(),
             pending_tasks: Vec::new(),
             quitting: false,
+            remaining_tasks: remain,
         }
     }
 
-    pub fn spawn(&mut self, coroutine: Arc<Coroutine>) {
+    fn spawn(&mut self, coroutine: Arc<Coroutine>) {
         self.queue.push(coroutine);
     }
 
-    pub fn submit(&mut self, coroutine: Arc<Coroutine>) {
+    fn submit(&mut self, coroutine: Arc<Coroutine>) {
+        self.pending_tasks.push(coroutine);
+    }
+
+    pub fn submit_coroutine(&mut self, coroutine: Arc<Coroutine>) {
+        let mut remain = self.remaining_tasks.lock();
+        *remain = remain.add(1);
         self.pending_tasks.push(coroutine);
     }
 
@@ -32,6 +40,7 @@ impl Scheduler {
             // 如果正在退出，则不再调度
             if sched.quitting {
                 println!("Scheduler is quitting, no more tasks will be scheduled.");
+                drop(sched);
                 break;
             }
             while let Some(pending) = sched.pending_tasks.pop() {
@@ -58,8 +67,14 @@ impl Scheduler {
                 if let Some(sched) = inner.scheduler.upgrade() {
                     sched.lock().submit(coroutine);
                 }
+            } else {
+                // 如果完成了，减少剩余任务数
+                let sched = scheduler.lock();
+                let mut remain = sched.remaining_tasks.lock();
+                *remain = remain.saturating_sub(1);
             }
         }
+        exit(0);
     }
 
     #[allow(dead_code)]
@@ -89,14 +104,6 @@ impl Scheduler {
     // 关闭调度器
     pub fn quit(&mut self) {
         self.quitting = true;
-    }
-
-    // 外部调用的等待方法
-    pub fn wait(&mut self) {
-        // 等待所有任务完成
-        while !self.queue.is_empty() || !self.pending_tasks.is_empty() {
-            yield_();
-        }
     }
 }
 

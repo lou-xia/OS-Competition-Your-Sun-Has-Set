@@ -2,7 +2,6 @@ use core::future::Future;
 use core::pin::Pin;
 use core::task::Poll;
 use alloc::sync::Arc;
-use runtime::{quit_coroutine_runtime, submit_coroutine, wait_all_coroutines};
 use spin::Mutex;
 
 use crate::coroutine::scheduler::Scheduler;
@@ -11,11 +10,14 @@ pub mod coroutine;
 pub mod scheduler;
 mod runtime;
 
+pub use runtime::{quit_coroutine_runtime, submit_coroutine, wait_all_coroutines};
+
 
 #[allow(unused)]
 pub fn test_for_coroutine() {
-    let scheduler = Arc::new(Mutex::new(Scheduler::new()));
+    // let scheduler = Arc::new(Mutex::new(Scheduler::new()));
     // let weak_scheduler: Weak<Mutex<Scheduler>> = Arc::downgrade(&scheduler);
+
 
     // 创建第一个协程
     let future1 = async {
@@ -45,9 +47,16 @@ pub fn test_for_coroutine() {
     // // Scheduler::run(scheduler.clone());
 
     submit_coroutine(future1, 1);
+    println!("[Task 1] submitted");
+
+
     submit_coroutine(future2, 2);
+    println!("[Task 2] submitted");
 
     wait_all_coroutines();
+
+    println!("All tasks completed, exiting runtime.");
+
     quit_coroutine_runtime();
 
 }
