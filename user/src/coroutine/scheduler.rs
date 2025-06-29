@@ -55,7 +55,7 @@ impl Scheduler {
                 continue;
             };
             // TODO: 应该打印的是cid，而不是priority，由于目前CidAllocator还没有实现，先用priority调试
-            println!("coroutine {} running", coroutine.inner.priority);
+            // println!("coroutine {} running", coroutine.inner.priority);
 
             let inner = coroutine.inner.clone();
             let waker = create_waker(inner.clone());
