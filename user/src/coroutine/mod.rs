@@ -4,10 +4,11 @@ use core::task::Poll;
 
 pub mod coroutine;
 pub mod event;
-mod runtime;
+pub mod runtime;
 pub mod scheduler;
 
-use alloc::{boxed::Box, sync::Arc};
+
+pub use alloc::sync::Arc;
 pub use runtime::{quit_coroutine_runtime, submit_coroutine, wait_all_coroutines};
 
 use crate::coroutine::event::Event;
