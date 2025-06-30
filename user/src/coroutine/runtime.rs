@@ -2,7 +2,7 @@ use alloc::{sync::Arc, vec::Vec};
 use spin::Mutex;
 use lazy_static::lazy_static;
 
-use crate::{exit, thread_create, waittid, yield_};
+use crate::{exit, gettid, thread_create, thread_prio, waittid, yield_};
 
 use super::{coroutine::Coroutine, scheduler::Scheduler};
 
@@ -11,7 +11,7 @@ const DEFAULT_THREAD_NUM: usize = 4;
 
 // 协程运行时, 包含多个线程, 每个线程有一个调度器
 lazy_static! {
-    static ref COROUTINE_RUNTIME: Arc<Mutex<CoroutineRuntime>> = Arc::new(Mutex::new(CoroutineRuntime::new(DEFAULT_THREAD_NUM)));
+    static ref COROUTINE_RUNTIME: Mutex<CoroutineRuntime> = Mutex::new(CoroutineRuntime::new(DEFAULT_THREAD_NUM));
 }
 
 // 协程运行时, 包含若干个线程, 每个线程有一个调度器
@@ -31,6 +31,7 @@ impl CoroutineRuntime {
         let mut threads = Vec::with_capacity(thread_num);
         
         for i in 0..thread_num {
+            // println!("Creating scheduler {}", i);
             // 创建一个新的调度器
             let scheduler = Arc::new(Mutex::new(Scheduler::new(i)));
             let scheduler_clone = Arc::clone(&scheduler);
@@ -42,12 +43,9 @@ impl CoroutineRuntime {
             if thread_id < 0 {
                 panic!("Failed to create thread for coroutine runtime");
             }
-            // 将线程ID存储到调度器
-            scheduler.lock().thread_id = thread_id as usize; // 将线程ID存储到调度器中
             // 将调度器和线程ID存储到对应的向量中
             schedulers.push(scheduler);
             threads.push(thread_id as usize);
-
         }
 
         Self {
@@ -61,7 +59,13 @@ impl CoroutineRuntime {
     // 启动协程运行时
     fn scheduler_entry(scheduler_ptr: usize) {
         // 从指针中获取调度器
-        let scheduler = unsafe { Arc::from_raw(scheduler_ptr as *const _) };
+        let scheduler: Arc<Mutex<Scheduler>> = unsafe { Arc::from_raw(scheduler_ptr as *const _) };
+        let tid = gettid();
+        let mut sched = scheduler.lock();
+        sched.thread_id = tid as usize; // 设置线程ID
+        // println!("Scheduler {} started with thread ID {}", sched.id, sched.thread_id);
+        thread_prio(sched.max_prio);
+        drop(sched);
         Scheduler::run(scheduler);
         exit(0); // 线程结束时退出
     }

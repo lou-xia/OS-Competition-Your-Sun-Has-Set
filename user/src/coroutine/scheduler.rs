@@ -11,7 +11,7 @@ pub struct Scheduler {
     pub pending_tasks: Vec<Arc<Coroutine>>,
     pub thread_id: usize, // 线程ID
     prio_dict: [u8; MAX_PRIO + 1], // 优先级字典
-    max_prio: usize, // 当前最大优先级
+    pub max_prio: usize, // 当前最大优先级
     quitting: bool,
 }
 
@@ -52,6 +52,7 @@ impl Scheduler {
     pub fn run(scheduler: Arc<Mutex<Self>>) {
         loop {
             let mut sched = scheduler.lock();
+            // println!("Scheduler {} running", sched.id);
             // 如果正在退出，则不再调度
             if sched.quitting {
                 println!("Scheduler {} is quitting", sched.id);
