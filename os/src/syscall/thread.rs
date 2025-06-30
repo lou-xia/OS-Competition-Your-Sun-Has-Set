@@ -1,7 +1,7 @@
 use crate::{
     mm::kernel_token,
-    task::{TaskControlBlock, add_task, current_task},
-    trap::{TrapContext, trap_handler},
+    task::{add_task, current_task, TaskControlBlock, MAX_PRIO, MIN_PRIO},
+    trap::{trap_handler, TrapContext},
 };
 use alloc::sync::Arc;
 
@@ -81,5 +81,21 @@ pub fn sys_waittid(tid: usize) -> i32 {
     } else {
         // waited thread has not exited
         -2
+    }
+}
+
+pub fn sys_thread_prio(prio: usize) -> isize {
+    let task = current_task().unwrap();
+    let mut task_inner = task.inner_exclusive_access();
+    let res = task_inner.res.as_mut().unwrap();
+    if prio > MAX_PRIO || prio < MIN_PRIO {
+        println!(
+            "[kernel] sys_thread_prio: invalid priority {} for thread {}",
+            prio, res.tid
+        );
+        -1
+    } else {
+        res.prio = prio;
+        0
     }
 }

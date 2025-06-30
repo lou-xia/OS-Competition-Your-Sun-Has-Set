@@ -8,6 +8,10 @@ use alloc::{
 };
 use lazy_static::*;
 
+pub const MIN_PRIO: usize = 1;
+pub const MAX_PRIO: usize = 20;
+pub const DEFAULT_PRIO: usize = 10;
+
 pub struct RecycleAllocator {
     current: usize,
     recycled: Vec<usize>,
@@ -113,6 +117,7 @@ impl KernelStack {
 pub struct TaskUserRes {
     pub tid: usize,
     pub ustack_base: usize,
+    pub prio: usize,
     pub process: Weak<ProcessControlBlock>,
 }
 
@@ -134,6 +139,7 @@ impl TaskUserRes {
         let task_user_res = Self {
             tid,
             ustack_base,
+            prio: DEFAULT_PRIO,
             process: Arc::downgrade(&process),
         };
         if alloc_user_res {
