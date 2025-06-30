@@ -2,12 +2,13 @@ use core::future::Future;
 use core::pin::Pin;
 use core::task::Poll;
 
-mod coroutine;
-mod event;
-mod runtime;
-mod scheduler;
+pub mod coroutine;
+pub mod event;
+pub mod runtime;
+pub mod scheduler;
 
 use alloc::sync::Arc;
+
 pub use runtime::{quit_coroutine_runtime, submit_coroutine, wait_all_coroutines};
 pub use event::Event;
 

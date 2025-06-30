@@ -31,6 +31,12 @@ impl Event {
     }
 }
 
+impl Drop for Event {
+    fn drop(&mut self) {
+        self.clear();
+    }
+}
+
 pub struct EventFuture {
     event: Arc<Event>,
 }
@@ -46,4 +52,14 @@ impl Future for EventFuture {
             Poll::Pending
         }
     }
+}
+
+impl Drop for EventFuture {
+    fn drop(&mut self) {
+        self.event.clear();
+    }
+}
+
+pub fn create_event() -> Arc<Event> {
+    Arc::new(Event::new())
 }
