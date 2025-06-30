@@ -3,7 +3,6 @@ use crate::sync::UPIntrFreeCell;
 use alloc::collections::btree_set::BTreeSet;
 use alloc::collections::BTreeMap;
 use alloc::sync::Arc;
-use alloc::vec::Vec;
 use lazy_static::*;
 
 pub struct TaskManager {

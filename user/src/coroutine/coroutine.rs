@@ -5,6 +5,7 @@ use alloc::boxed::Box;
 use alloc::sync::{Arc, Weak};
 use alloc::vec::Vec;
 use spin::Mutex;
+use lazy_static::*;
 
 use crate::coroutine::scheduler::Scheduler;
 
@@ -26,14 +27,12 @@ pub struct CoroutineInner {
 
 impl Coroutine {
     pub fn new(future: impl Future<Output = ()> + Send +'static, priority: usize, scheduler: &Arc<Mutex<Scheduler>>) -> Self {
-        // TODO: allocate cid
-        // let cid = CidAllocator.allocate_cid();
+        let cid = CID_ALLOCATOR.lock().alloc();
         let mut priority = priority;
         if priority < MIN_PRIO || priority > MAX_PRIO {
             println!("Priority must be between {} and {}, use default priority.", MIN_PRIO, MAX_PRIO);
             priority = DEFAULT_PRIO;
         }
-        let cid = 0;
         let inner = CoroutineInner {
             future: Mutex::new(Box::pin(future)),
             priority,
@@ -42,6 +41,12 @@ impl Coroutine {
         };
         let inner = Arc::new(inner);
         Self { inner }
+    }
+}
+
+impl Drop for Coroutine {
+    fn drop(&mut self) {
+        CID_ALLOCATOR.lock().dealloc(self.inner.cid);
     }
 }
 
@@ -94,4 +99,8 @@ impl CidAllocator {
         );
         self.recycled.push(id);
     }
+}
+
+lazy_static! {
+    static ref CID_ALLOCATOR: Mutex<CidAllocator> = Mutex::new(CidAllocator::new());
 }
