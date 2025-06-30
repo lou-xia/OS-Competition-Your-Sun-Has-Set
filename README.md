@@ -1,4 +1,4 @@
-# 基于rCore的优先级协程、线程、进程统一调度系统
+# proj146 基于rCore的优先级协程、线程、进程统一调度系统
 
 [![rCore-Tutorial-v3](https://img.shields.io/badge/based%20on-rCore-blue)](https://github.com/rcore-os/rCore-Tutorial-v3)
 [![Rust](https://img.shields.io/badge/language-Rust-orange)](https://www.rust-lang.org/)
