@@ -74,7 +74,7 @@ impl CoroutineRuntime {
     fn submit(&mut self, future: impl Future<Output = ()> + Send + 'static, priority: usize) {
         // 选择剩余任务数最少的调度器
         let scheduler = self.schedulers.iter().min_by_key(|s| s.lock().task_count()).unwrap();
-        println!("submit coroutine to scheduler {}", scheduler.lock().id);
+        // println!("submit coroutine to scheduler {}", scheduler.lock().id);
         let coroutine = Arc::new(Coroutine::new(future, priority, &scheduler));
         // 将协程提交到对应的调度器
         scheduler.lock().submit_coroutine(coroutine);

@@ -1,6 +1,7 @@
 #![no_std]
 #![no_main]
 
+
 use alloc::vec::Vec;
 use user_lib::{
     event::create_event, exit, quit_coroutine_runtime, sleep_coro::coro_sleep, submit_coroutine, thread_create, wait_all_coroutines, waittid, yield_coro::coro_yield_once
@@ -30,6 +31,7 @@ pub fn main() -> i32 {
         waittid(thread_id);
     }
 
+
     wait_all_coroutines();
     quit_coroutine_runtime();
     0
@@ -43,6 +45,7 @@ fn cor_task(thread_num: usize) {
         c_event_clone.wait().await;
         println!("THREAD {} coroutine 1 end", thread_num);
     };
+
     let coroutine_2 = async move {
         println!("THREAD {} coroutine 2 start", thread_num);
         coro_sleep(3000).await;
@@ -52,5 +55,6 @@ fn cor_task(thread_num: usize) {
     };
     submit_coroutine(coroutine_1, thread_num);
     submit_coroutine(coroutine_2, thread_num + 1);
+
     exit(0);
 }
