@@ -55,7 +55,7 @@ impl Scheduler {
             // println!("Scheduler {} running", sched.id);
             // 如果正在退出，则不再调度
             if sched.quitting {
-                println!("Scheduler {} is quitting", sched.id);
+                // println!("Scheduler {} is quitting", sched.id);
                 drop(sched);
                 break;
             }
