@@ -50,7 +50,7 @@ fn cor_task(thread_num: usize) {
         coro_yield_once().await;
         println!("THREAD {} coroutine 2 end", thread_num);
     };
-    submit_coroutine(coroutine_1, 2);
-    submit_coroutine(coroutine_2, 1);
+    submit_coroutine(coroutine_1, thread_num);
+    submit_coroutine(coroutine_2, thread_num + 1);
     exit(0);
 }
