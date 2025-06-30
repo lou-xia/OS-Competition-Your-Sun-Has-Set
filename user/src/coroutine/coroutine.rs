@@ -8,6 +8,10 @@ use spin::Mutex;
 
 use crate::coroutine::scheduler::Scheduler;
 
+pub const MIN_PRIO: usize = 1;
+pub const MAX_PRIO: usize = 20;
+pub const DEFAULT_PRIO: usize = 10;
+
 /// 协程定义
 pub struct Coroutine {
     pub inner: Arc<CoroutineInner>,
@@ -24,6 +28,11 @@ impl Coroutine {
     pub fn new(future: impl Future<Output = ()> + Send +'static, priority: usize, scheduler: &Arc<Mutex<Scheduler>>) -> Self {
         // TODO: allocate cid
         // let cid = CidAllocator.allocate_cid();
+        let mut priority = priority;
+        if priority < MIN_PRIO || priority > MAX_PRIO {
+            println!("Priority must be between {} and {}, use default priority.", MIN_PRIO, MAX_PRIO);
+            priority = DEFAULT_PRIO;
+        }
         let cid = 0;
         let inner = CoroutineInner {
             future: Mutex::new(Box::pin(future)),

@@ -1,22 +1,30 @@
-use crate::{coroutine::coroutine::{Coroutine, CoroutineInner}, yield_};
+use crate::{coroutine::{coroutine::{Coroutine, CoroutineInner}, runtime::remove_task}, thread_prio, yield_};
 use alloc::{collections::binary_heap::BinaryHeap, sync::Arc, vec::Vec};
-use core::{ops::Add, task::{Context, Poll, RawWaker, RawWakerVTable, Waker}};
+use core::task::{Context, Poll, RawWaker, RawWakerVTable, Waker};
 use spin::Mutex;
 
+use super::coroutine::{MAX_PRIO, MIN_PRIO};
+
 pub struct Scheduler {
+    pub id: usize, // 调度器的唯一标识符
     pub queue: BinaryHeap<Arc<Coroutine>>,
     pub pending_tasks: Vec<Arc<Coroutine>>,
+    pub thread_id: usize, // 线程ID
+    prio_dict: [u8; MAX_PRIO + 1], // 优先级字典
+    max_prio: usize, // 当前最大优先级
     quitting: bool,
-    remaining_tasks: Arc<Mutex<usize>>, // 用于跟踪剩余任务数
 }
 
 impl Scheduler {
-    pub fn new(remain: Arc<Mutex<usize>>) -> Self {
+    pub fn new(id: usize) -> Self {
         Self {
+            id,
             queue: BinaryHeap::new(),
             pending_tasks: Vec::new(),
+            thread_id: 0, // 线程ID可以在创建时设置
+            prio_dict: [0; MAX_PRIO + 1], // 初始化优先级字典
+            max_prio: MIN_PRIO, // 初始最大优先级为最小值
             quitting: false,
-            remaining_tasks: remain,
         }
     }
 
@@ -29,9 +37,16 @@ impl Scheduler {
     }
 
     pub fn submit_coroutine(&mut self, coroutine: Arc<Coroutine>) {
-        let mut remain = self.remaining_tasks.lock();
-        *remain = remain.add(1);
+        // 更新优先级字典
+        let priority = coroutine.inner.priority;
+        if priority > self.max_prio {
+            self.max_prio = priority;
+
+            thread_prio(priority as usize); // 设置线程的优先级
+        }
+        self.prio_dict[priority] += 1;
         self.pending_tasks.push(coroutine);
+
     }
 
     pub fn run(scheduler: Arc<Mutex<Self>>) {
@@ -39,7 +54,7 @@ impl Scheduler {
             let mut sched = scheduler.lock();
             // 如果正在退出，则不再调度
             if sched.quitting {
-                println!("Scheduler is quitting, no more tasks will be scheduled.");
+                println!("Scheduler {} is quitting", sched.id);
                 drop(sched);
                 break;
             }
@@ -55,7 +70,7 @@ impl Scheduler {
                 continue;
             };
             // TODO: 应该打印的是cid，而不是priority，由于目前CidAllocator还没有实现，先用priority调试
-            println!("coroutine {} running", coroutine.inner.priority);
+            // println!("coroutine {} running", coroutine.inner.priority);
 
             let inner = coroutine.inner.clone();
             let waker = create_waker(inner.clone());
@@ -64,14 +79,24 @@ impl Scheduler {
 
             if let core::task::Poll::Pending = future.as_mut().poll(&mut ctx) {
                 // 如果未完成，再加入任务队列
-                if let Some(sched) = inner.scheduler.upgrade() {
-                    sched.lock().submit(coroutine);
-                }
+                let mut sched = scheduler.lock();
+                sched.submit(coroutine);
             } else {
+                // 减少优先级字典
+                let mut sched = scheduler.lock();
+                sched.prio_dict[inner.priority] -= 1;
+                if sched.prio_dict[inner.priority] == 0 && inner.priority == sched.max_prio {
+                    // 如果该优先级的任务数为0，更新最大优先级
+                    
+                    sched.max_prio = (MIN_PRIO..=MAX_PRIO)
+                        .rev()
+                        .find(|&p| sched.prio_dict[p] > 0)
+                        .unwrap_or(MIN_PRIO);
+                    
+                    thread_prio(sched.max_prio); // 更新线程优先级
+                }
                 // 如果完成了，减少剩余任务数
-                let sched = scheduler.lock();
-                let mut remain = sched.remaining_tasks.lock();
-                *remain = remain.saturating_sub(1);
+                remove_task();
             }
         }
     }

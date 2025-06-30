@@ -2,15 +2,14 @@ use core::future::Future;
 use core::pin::Pin;
 use core::task::Poll;
 
-pub mod coroutine;
-pub mod event;
+mod coroutine;
+mod event;
 mod runtime;
-pub mod scheduler;
+mod scheduler;
 
-use alloc::{boxed::Box, sync::Arc};
+use alloc::sync::Arc;
 pub use runtime::{quit_coroutine_runtime, submit_coroutine, wait_all_coroutines};
-
-use crate::coroutine::event::Event;
+pub use event::Event;
 
 #[allow(unused)]
 pub fn test_for_coroutine() {

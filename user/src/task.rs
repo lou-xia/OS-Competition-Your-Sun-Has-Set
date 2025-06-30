@@ -81,3 +81,7 @@ pub fn waittid(tid: usize) -> isize {
         }
     }
 }
+
+pub fn thread_prio(priority: usize) -> isize {
+    sys_thread_prio(priority)
+}
