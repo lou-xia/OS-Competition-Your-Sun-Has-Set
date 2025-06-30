@@ -30,7 +30,7 @@ pub fn test_for_coroutine() {
     let future2 = async move {
         for i in 0..3 {
             println!("[Task 2] polling... round {}", i);
-            dummy_yield().await;
+            wait_one_yield().await;
         }
         println!("[Task 2] setting event");
         event2.set();
@@ -49,7 +49,7 @@ pub fn test_for_coroutine() {
     quit_coroutine_runtime();
 }
 
-fn dummy_yield() -> impl Future<Output = ()> {
+fn wait_one_yield() -> impl Future<Output = ()> {
     struct YieldOnce(bool);
 
     impl Future for YieldOnce {
