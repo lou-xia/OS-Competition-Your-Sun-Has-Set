@@ -9,7 +9,7 @@ pub mod scheduler;
 
 use alloc::sync::Arc;
 
-pub use runtime::{quit_coroutine_runtime, submit_coroutine, wait_all_coroutines};
+pub use runtime::{quit_coroutine_runtime, submit_distribute_coroutine, wait_all_coroutines};
 pub use event::Event;
 
 #[allow(unused)]
@@ -36,10 +36,10 @@ pub fn test_for_coroutine() {
         event2.set();
     };
 
-    submit_coroutine(future1, 1);
+    submit_distribute_coroutine(future1, 1);
     println!("[Task 1] submitted");
 
-    submit_coroutine(future2, 2);
+    submit_distribute_coroutine(future2, 2);
     println!("[Task 2] submitted");
 
     wait_all_coroutines();

@@ -4,7 +4,7 @@
 use user_lib::{
     quit_coroutine_runtime,
     sleep_coro::coro_sleep,
-    submit_coroutine,
+    submit_distribute_coroutine,
     wait_all_coroutines,
 };
 
@@ -22,7 +22,7 @@ pub fn main() -> i32 {
             coro_sleep(1000).await;
             println!("coroutine {} after sleep", i);
         };
-        submit_coroutine(future, i + 1);
+        submit_distribute_coroutine(future, i + 1);
     }
     wait_all_coroutines();
     quit_coroutine_runtime();

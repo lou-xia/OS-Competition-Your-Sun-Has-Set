@@ -4,7 +4,7 @@
 
 use alloc::vec::Vec;
 use user_lib::{
-    event::create_event, exit, quit_coroutine_runtime, sleep_coro::coro_sleep, submit_coroutine, thread_create, wait_all_coroutines, waittid, yield_coro::coro_yield_once
+    event::create_event, exit, quit_coroutine_runtime, sleep_coro::coro_sleep, submit_distribute_coroutine, thread_create, wait_all_coroutines, waittid, yield_coro::coro_yield_once
 };
 
 #[macro_use]
@@ -53,8 +53,8 @@ fn cor_task(thread_num: usize) {
         coro_yield_once().await;
         println!("THREAD {} coroutine 2 end", thread_num);
     };
-    submit_coroutine(coroutine_1, thread_num);
-    submit_coroutine(coroutine_2, thread_num + 1);
+    submit_distribute_coroutine(coroutine_1, thread_num);
+    submit_distribute_coroutine(coroutine_2, thread_num + 1);
 
     exit(0);
 }
