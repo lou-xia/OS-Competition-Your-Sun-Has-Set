@@ -44,9 +44,9 @@ impl Coroutine {
     }
 }
 
-impl Drop for Coroutine {
+impl Drop for CoroutineInner {
     fn drop(&mut self) {
-        CID_ALLOCATOR.lock().dealloc(self.inner.cid);
+        CID_ALLOCATOR.lock().dealloc(self.cid);
     }
 }
 

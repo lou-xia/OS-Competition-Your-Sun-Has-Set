@@ -19,11 +19,12 @@ impl SleepFuture {
 impl Future for SleepFuture {
     type Output = ();
 
-    fn poll(self: Pin<&mut Self>, _cx: &mut core::task::Context<'_>) -> Poll<Self::Output> {
+    fn poll(self: Pin<&mut Self>, cx: &mut core::task::Context<'_>) -> Poll<Self::Output> {
         let elapsed = get_time() as usize - self.start_time;
         if elapsed >= self.duration {
             Poll::Ready(())
         } else {
+            cx.waker().wake_by_ref();
             Poll::Pending
         }
     }

@@ -1,4 +1,4 @@
-use crate::{coroutine::{coroutine::{Coroutine, CoroutineInner}, runtime::remove_task}, thread_prio, yield_};
+use crate::{coroutine::{self, coroutine::{Coroutine, CoroutineInner}, runtime::remove_task}, thread_prio, yield_};
 use alloc::{collections::{binary_heap::BinaryHeap, vec_deque::VecDeque}, sync::Arc};
 use core::task::{Context, Poll, RawWaker, RawWakerVTable, Waker};
 use spin::Mutex;
@@ -82,10 +82,10 @@ impl Scheduler {
 
             if let core::task::Poll::Pending = future.as_mut().poll(&mut ctx) {
                 // 如果未完成，再加入任务队列
-                let mut sched = scheduler.lock();
-                sched.submit(coroutine);
+                // let mut sched = scheduler.lock();
+                // sched.submit(coroutine);
                 
-                drop(sched);
+                // drop(sched);
             } else {
                 // 减少优先级字典
                 let mut sched = scheduler.lock();
@@ -143,24 +143,26 @@ fn clone_waker(data: *const ()) -> RawWaker {
     RawWaker::new(Arc::into_raw(cloned) as *const (), &VTABLE)
 }
 
-fn wake(_data: *const ()) {}
+// fn wake(_data: *const ()) {}
 
 // TODO：下面的代码是开发时用的，后来我在 scheduler 的 run 里又实现了一次，因此把这里注释
 // 但是我感觉这些代码或许后面还有用，先留一下
 // 理论上讲，一个协程在poll后如何还要入栈，在wake里入栈更好，但是这样又会导致第一次入栈需要额外调用wake，
 // 同时还要在创建线程的时候支持额外的waker参数。因此，目前先这样写吧，如果后面需要再改。
-// fn wake(data: *const ()) {
-//     let inner = unsafe { Arc::<CoroutineInner>::from_raw(data as *const CoroutineInner) };
-//     if let Some(sched) = inner.scheduler.upgrade() {
-//         let coroutine = Arc::new(Coroutine {
-//             inner: inner.clone(),
-//         });
-//         sched.lock().submit(coroutine);
-//     }
-//     core::mem::forget(inner);
-// }
+fn wake(data: *const ()) {
+    let inner = unsafe { Arc::<CoroutineInner>::from_raw(data as *const CoroutineInner) };
+    if let Some(sched) = inner.scheduler.upgrade() {
+        let coroutine = Arc::new(Coroutine {
+            inner: inner.clone(),
+        });
+        sched.lock().submit(coroutine);
+    }
+    core::mem::forget(inner);
+}
 
-fn wake_by_ref(_data: *const ()) {}
+fn wake_by_ref(data: *const ()) {
+    wake(data);
+}
 
 fn drop_waker(data: *const ()) {
     unsafe {

@@ -20,7 +20,7 @@ impl Future for YieldFuture {
     fn poll(self: Pin<&mut Self>, cx: &mut core::task::Context<'_>) -> Poll<Self::Output> {
         if self.passed.load(Ordering::SeqCst) < self.times {
             self.passed.fetch_add(1, Ordering::SeqCst);
-            // cx.waker().wake_by_ref();
+            cx.waker().wake_by_ref();
             Poll::Pending
         } else {
             Poll::Ready(())
