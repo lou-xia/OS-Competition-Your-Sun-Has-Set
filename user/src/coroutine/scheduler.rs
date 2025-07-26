@@ -1,4 +1,4 @@
-use crate::{coroutine::{self, coroutine::{Coroutine, CoroutineInner}, runtime::remove_task}, thread_prio, yield_};
+use crate::{coroutine::{coroutine::{Coroutine, CoroutineInner}, runtime::remove_task}, thread_prio, yield_};
 use alloc::{collections::{binary_heap::BinaryHeap, vec_deque::VecDeque}, sync::Arc};
 use core::task::{Context, Poll, RawWaker, RawWakerVTable, Waker};
 use spin::Mutex;
@@ -13,7 +13,6 @@ lazy_static! {
 pub struct Scheduler {
     pub id: usize, // 调度器的唯一标识符
     pub queue: BinaryHeap<Arc<Coroutine>>,
-    // pub pending_tasks: Vec<Arc<Coroutine>>,
     pub thread_id: usize, // 线程ID
     prio_dict: [u8; MAX_PRIO + 1], // 优先级字典
     pub max_prio: usize, // 当前最大优先级
@@ -25,7 +24,6 @@ impl Scheduler {
         Self {
             id,
             queue: BinaryHeap::new(),
-            // pending_tasks: Vec::new(),
             thread_id: 0, // 线程ID可以在创建时设置
             prio_dict: [0; MAX_PRIO + 1], // 初始化优先级字典
             max_prio: MIN_PRIO, // 初始最大优先级为最小值
@@ -56,16 +54,11 @@ impl Scheduler {
     pub fn run(scheduler: Arc<Mutex<Self>>) {
         loop {
             let mut sched = scheduler.lock();
-            // println!("Scheduler {} running", sched.id);
             // 如果正在退出，则不再调度
             if sched.quitting {
-                // println!("Scheduler {} is quitting", sched.id);
                 drop(sched);
                 break;
             }
-            // while let Some(pending) = sched.pending_tasks.pop() {
-            //     sched.spawn(pending);
-            // }
             let coroutine = sched.queue.pop();
             drop(sched);
 
@@ -81,11 +74,10 @@ impl Scheduler {
             let mut future = inner.future.lock();
 
             if let core::task::Poll::Pending = future.as_mut().poll(&mut ctx) {
-                // 如果未完成，再加入任务队列
                 // let mut sched = scheduler.lock();
                 // sched.submit(coroutine);
-                
                 // drop(sched);
+                // TODO: 这里是否需要其他操作？
             } else {
                 // 减少优先级字典
                 let mut sched = scheduler.lock();
@@ -109,9 +101,6 @@ impl Scheduler {
     #[allow(dead_code)]
     pub fn step(&mut self) {
         if let Some(coroutine) = self.queue.pop() {
-            // TODO: 应该打印的是cid，而不是priority，由于目前CidAllocator还没有实现，先用priority调试
-            // println!("coroutine {} running", coroutine.inner.priority);
-
             let inner = coroutine.inner.clone();
             let waker = create_waker(inner.clone());
             let mut ctx = Context::from_waker(&waker);
@@ -119,9 +108,6 @@ impl Scheduler {
             if let Poll::Pending = future.as_mut().poll(&mut ctx) {
                 self.spawn(coroutine);
             }
-            // while let Some(pending) = self.pending_tasks.pop() {
-            //     self.spawn(pending);
-            // }
         }
     }
 
@@ -145,10 +131,6 @@ fn clone_waker(data: *const ()) -> RawWaker {
 
 // fn wake(_data: *const ()) {}
 
-// TODO：下面的代码是开发时用的，后来我在 scheduler 的 run 里又实现了一次，因此把这里注释
-// 但是我感觉这些代码或许后面还有用，先留一下
-// 理论上讲，一个协程在poll后如何还要入栈，在wake里入栈更好，但是这样又会导致第一次入栈需要额外调用wake，
-// 同时还要在创建线程的时候支持额外的waker参数。因此，目前先这样写吧，如果后面需要再改。
 fn wake(data: *const ()) {
     let inner = unsafe { Arc::<CoroutineInner>::from_raw(data as *const CoroutineInner) };
     if let Some(sched) = inner.scheduler.upgrade() {
