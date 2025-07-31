@@ -2,11 +2,13 @@ use super::{FrameTracker, frame_alloc};
 use super::{PTEFlags, PageTable, PageTableEntry};
 use super::{PhysAddr, PhysPageNum, VirtAddr, VirtPageNum};
 use super::{StepByOne, VPNRange};
-use crate::config::{MEMORY_END, MMIO, PAGE_SIZE, TRAMPOLINE};
+use crate::config::{KERNEL_VDSO_BASE, MEMORY_END, MMIO, PAGE_SIZE, TRAMPOLINE, USER_VDSO_BASE};
 use crate::sync::UPIntrFreeCell;
+use crate::vdso::vdso::VDSO_PAGE;
 use alloc::collections::BTreeMap;
 use alloc::sync::Arc;
 use alloc::vec::Vec;
+use log::info;
 use core::arch::asm;
 use lazy_static::*;
 use riscv::register::satp;
@@ -89,11 +91,30 @@ impl MemorySet {
             PTEFlags::R | PTEFlags::X,
         );
     }
+    fn map_kernel_vdso(&mut self) {
+        self.page_table.map(
+            VirtAddr::from(KERNEL_VDSO_BASE).into(),
+            VDSO_PAGE.ppn,
+            PTEFlags::R | PTEFlags::W | PTEFlags::X,
+        );
+        let vpn: VirtPageNum = VirtAddr::from(KERNEL_VDSO_BASE).into();
+        let ppn = VDSO_PAGE.ppn;
+        info!("VDSO area: vpn: {:?}, ppn: {:?}", vpn, ppn);
+    }
+    fn map_user_vdso(&mut self) {
+        self.page_table.map(
+            VirtAddr::from(USER_VDSO_BASE).into(),
+            VDSO_PAGE.ppn,
+            // TODO：看一下是否真的需要这么高的权限
+            PTEFlags::R | PTEFlags::W | PTEFlags::X | PTEFlags::U,
+        );
+    }
     /// Without kernel stacks.
     pub fn new_kernel() -> Self {
         let mut memory_set = Self::new_bare();
         // map trampoline
         memory_set.map_trampoline();
+        memory_set.map_kernel_vdso();
         // map kernel sections
         // println!(".text [{:#x}, {:#x})", stext as usize, etext as usize);
         // println!(".rodata [{:#x}, {:#x})", srodata as usize, erodata as usize);
@@ -172,6 +193,7 @@ impl MemorySet {
         let mut memory_set = Self::new_bare();
         // map trampoline
         memory_set.map_trampoline();
+        memory_set.map_user_vdso();
         // map program headers of elf, with U flag
         let elf = xmas_elf::ElfFile::new(elf_data).unwrap();
         let elf_header = elf.header;
