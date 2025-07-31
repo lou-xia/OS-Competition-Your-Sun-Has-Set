@@ -29,6 +29,7 @@ mod syscall;
 mod task;
 mod timer;
 mod trap;
+mod vdso;
 
 use crate::drivers::chardev::CharDevice;
 use crate::drivers::chardev::UART;
