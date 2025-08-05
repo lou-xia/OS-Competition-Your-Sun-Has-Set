@@ -1,6 +1,8 @@
-use super::id::TaskUserRes;
+use super::id::{TaskUserRes, DEFAULT_PRIO};
+use super::manager::TaskSched;
 use super::{KernelStack, ProcessControlBlock, TaskContext, kstack_alloc};
 use crate::trap::TrapContext;
+use crate::vdso::vdso::{LockedHeapAllocator, TASK_SCHED_ALLOCATOR};
 use crate::{
     mm::PhysPageNum,
     sync::{UPIntrFreeCell, UPIntrRefMut},
@@ -11,6 +13,7 @@ pub struct TaskControlBlock {
     // immutable
     pub process: Weak<ProcessControlBlock>,
     pub kstack: KernelStack,
+    pub sched: Arc<UPIntrFreeCell<TaskSched>, LockedHeapAllocator>,
     // mutable
     pub inner: UPIntrFreeCell<TaskControlBlockInner>,
 }
@@ -30,19 +33,12 @@ impl TaskControlBlock {
 pub struct TaskControlBlockInner {
     pub res: Option<TaskUserRes>,
     pub trap_cx_ppn: PhysPageNum,
-    pub task_cx: TaskContext,
-    pub task_status: TaskStatus,
     pub exit_code: Option<i32>,
 }
 
 impl TaskControlBlockInner {
     pub fn get_trap_cx(&self) -> &'static mut TrapContext {
         self.trap_cx_ppn.get_mut()
-    }
-
-    #[allow(unused)]
-    fn get_status(&self) -> TaskStatus {
-        self.task_status
     }
 }
 
@@ -59,12 +55,19 @@ impl TaskControlBlock {
         Self {
             process: Arc::downgrade(&process),
             kstack,
+            sched: Arc::new_in(unsafe {
+                UPIntrFreeCell::new(TaskSched::new(
+                        process.pid.0,
+                        res.tid,
+                        DEFAULT_PRIO,
+                        TaskContext::goto_trap_return(kstack_top),
+                        TaskStatus::Ready,
+                    ))
+            }, TASK_SCHED_ALLOCATOR.clone()),
             inner: unsafe {
                 UPIntrFreeCell::new(TaskControlBlockInner {
                     res: Some(res),
                     trap_cx_ppn,
-                    task_cx: TaskContext::goto_trap_return(kstack_top),
-                    task_status: TaskStatus::Ready,
                     exit_code: None,
                 })
             },

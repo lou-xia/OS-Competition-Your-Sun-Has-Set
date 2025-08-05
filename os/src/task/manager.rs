@@ -1,4 +1,4 @@
-use super::{ProcessControlBlock, TaskControlBlock, TaskStatus};
+use super::{ProcessControlBlock, TaskContext, TaskControlBlock, TaskStatus};
 use crate::sync::UPIntrFreeCell;
 use alloc::collections::btree_set::BTreeSet;
 use alloc::collections::BTreeMap;
@@ -7,50 +7,45 @@ use lazy_static::*;
 
 pub struct TaskManager {
     // ready_queue: VecDeque<Task>,
-    ready_queue: BTreeSet<Task>,
+    ready_queue: BTreeSet<Arc<UPIntrFreeCell<TaskSched>>>,
 }
 
 // const INITIAL_TIME_SLICES: [usize; MAX_PRIO + 1] = [
 //     0, 1, 1, 2, 2, 3, 3, 4, 4, 5, 1, 6, 6, 5, 5, 4, 4, 3, 3, 2, 2
 // ];
 
-struct Task {
-    id: (usize, usize), // 任务ID(同时是线程id)
-    task: Arc<TaskControlBlock>,
-    // remaining_time: usize, // 剩余时间片
-    aging: usize, // 老化机制, 用于防止饥饿
+
+pub struct TaskSched {
+    pub id: (usize, usize), // 任务ID(同时是线程id)
+    pub prio: usize, // 静态优先级
+    pub aging: usize, // 老化机制, 用于防止饥饿
+    pub task_cx: TaskContext,
+    pub task_status: TaskStatus,
 }
 
-impl Task {
-    fn new(task: Arc<TaskControlBlock>) -> Self {
-        let task_inner = task.inner_exclusive_access();
-        let res = task_inner.res.as_ref().unwrap();
-        let pid = res.process.upgrade().unwrap().pid.0;
+impl TaskSched {
+    pub fn new(pid: usize, tid: usize, prio: usize, task_cx: TaskContext, task_status: TaskStatus) -> Self {
         Self {
-            id: (pid, res.tid), // 线程id, 同时是任务唯一标识
-            task: Arc::clone(&task),
-            // remaining_time: INITIAL_TIME_SLICES[res.prio], // 初始时间片
-            aging: 0, // 初始老化值
+            id: (pid, tid),
+            prio,
+            aging: 0,
+            task_cx,
+            task_status,
         }
     }
 
-    // 因为prio可能被修改, 每次获取优先级时都需要重新计算
-    fn get_prio(&self) -> usize {
-        self.task.inner_exclusive_access().res.as_ref().unwrap().prio as usize
-    }
-
-    fn get_dynamic_prio(&self) -> usize {
-        self.get_prio() + self.aging
+    pub fn get_dynamic_prio(&self) -> usize {
+        self.prio + self.aging
     }
 }
 
-impl PartialEq for Task {
+impl PartialEq for TaskSched {
     fn eq(&self, other: &Self) -> bool {
         (self.get_dynamic_prio()) == (other.get_dynamic_prio()) && (self.id == other.id)
     }
 }
 
-impl PartialOrd for Task {
+impl PartialOrd for TaskSched {
     // 大根堆, 优先级高的任务在前
     fn partial_cmp(&self, other: &Self) -> Option<core::cmp::Ordering> {
         let p1 = self.get_dynamic_prio();
@@ -65,9 +60,9 @@ impl PartialOrd for Task {
     }
 }
 
-impl Eq for Task {}
+impl Eq for TaskSched {}
 
-impl Ord for Task {
+impl Ord for TaskSched {
     fn cmp(&self, other: &Self) -> core::cmp::Ordering {
         self.partial_cmp(other).unwrap_or(core::cmp::Ordering::Equal)
     }
