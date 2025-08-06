@@ -179,6 +179,11 @@ impl TaskManager {
         self.size -= 1;
         if self.size > 0 {
             self.ready_heap[0] = self.ready_heap[self.size].clone();
+            // 老化
+            for i in 0..self.size {
+                let mut inner = self.ready_heap[i].inner_exclusive_access();
+                inner.aging += 1;
+            }
             // 下滤操作
             let mut index = 0;
             while index < self.size {
