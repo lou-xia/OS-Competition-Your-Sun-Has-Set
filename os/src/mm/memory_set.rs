@@ -2,15 +2,17 @@ use super::{FrameTracker, frame_alloc};
 use super::{PTEFlags, PageTable, PageTableEntry};
 use super::{PhysAddr, PhysPageNum, VirtAddr, VirtPageNum};
 use super::{StepByOne, VPNRange};
-use crate::config::{KERNEL_VDSO_BASE, MEMORY_END, MMIO, PAGE_SIZE, TRAMPOLINE, USER_VDSO_BASE};
+use crate::config::{
+    KERNEL_VDSO_BASE, MEMORY_END, MMIO, PAGE_SIZE, TRAMPOLINE, USER_VDSO_BASE, VDSO_SIZE,
+};
 use crate::sync::UPIntrFreeCell;
 use crate::vdso::vdso::VDSO_PAGE;
 use alloc::collections::BTreeMap;
 use alloc::sync::Arc;
 use alloc::vec::Vec;
-use log::info;
 use core::arch::asm;
 use lazy_static::*;
+use log::info;
 use riscv::register::satp;
 
 unsafe extern "C" {
@@ -92,22 +94,29 @@ impl MemorySet {
         );
     }
     fn map_kernel_vdso(&mut self) {
-        self.page_table.map(
-            VirtAddr::from(KERNEL_VDSO_BASE).into(),
-            VDSO_PAGE.ppn,
-            PTEFlags::R | PTEFlags::W | PTEFlags::X,
-        );
+        for i in 0..VDSO_SIZE {
+            self.page_table.map(
+                VirtAddr::from(KERNEL_VDSO_BASE + i * PAGE_SIZE).into(),
+                VDSO_PAGE[i].ppn,
+                PTEFlags::R | PTEFlags::W | PTEFlags::X,
+            );
+        }
         let vpn: VirtPageNum = VirtAddr::from(KERNEL_VDSO_BASE).into();
-        let ppn = VDSO_PAGE.ppn;
-        info!("VDSO area: vpn: {:?}, ppn: {:?}", vpn, ppn);
+        let ppn = VDSO_PAGE[0].ppn;
+        info!(
+            "VDSO area: vpn: {:?}, ppn: {:?}, PageNum: {:?}",
+            vpn, ppn, VDSO_SIZE
+        );
     }
     fn map_user_vdso(&mut self) {
-        self.page_table.map(
-            VirtAddr::from(USER_VDSO_BASE).into(),
-            VDSO_PAGE.ppn,
-            // TODO：看一下是否真的需要这么高的权限
-            PTEFlags::R | PTEFlags::W | PTEFlags::X | PTEFlags::U,
-        );
+        for i in 0..VDSO_SIZE {
+            self.page_table.map(
+                VirtAddr::from(USER_VDSO_BASE + i * PAGE_SIZE).into(),
+                VDSO_PAGE[i].ppn,
+                // TODO：看一下是否真的需要这么高的权限
+                PTEFlags::R | PTEFlags::W | PTEFlags::X | PTEFlags::U,
+            );
+        }
     }
     /// Without kernel stacks.
     pub fn new_kernel() -> Self {

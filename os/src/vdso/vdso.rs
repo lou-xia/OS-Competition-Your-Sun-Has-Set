@@ -2,8 +2,8 @@ use core::{alloc::Layout, ptr::NonNull};
 
 use buddy_system_allocator::LockedHeap;
 use lazy_static::lazy_static;
-use crate::{config::VDSO_SIZE, mm::{frame_alloc, FrameTracker, PhysAddr}, sync::UPIntrFreeCell};
-use alloc::{alloc::{AllocError, Allocator}, sync::Arc};
+use crate::{config::{PAGE_SIZE, VDSO_SIZE}, mm::{frame_alloc, frame_alloc_more, FrameTracker, PhysAddr}, sync::UPIntrFreeCell};
+use alloc::{alloc::{AllocError, Allocator}, sync::Arc, vec::{self, Vec}};
 
 pub struct VdsoData {
     pub num: usize,
@@ -18,16 +18,17 @@ impl VdsoData {
 }
 
 lazy_static! {
-    pub static ref VDSO_PAGE: Arc<FrameTracker> = {
-        let ppn = frame_alloc().unwrap();
+    pub static ref VDSO_PAGE: Arc<Vec<FrameTracker>> = {
+        let mut ppn = frame_alloc_more(VDSO_SIZE).unwrap();
+        ppn.reverse();
         unsafe {
             // 将前半交给堆分配器
-            TASK_SCHED_ALLOCATOR.0.lock().init(PhysAddr::from(ppn.ppn).into(), VDSO_SIZE / 2);
+            TASK_SCHED_ALLOCATOR.0.lock().init(PhysAddr::from(ppn[0].ppn).into(), VDSO_SIZE * PAGE_SIZE / 2);
         }
         Arc::new(ppn)
     };
     pub static ref VDSO_DATA: Arc<UPIntrFreeCell<&'static mut VdsoData>> = {
-        let pa = VDSO_PAGE.ppn;
+        let pa = VDSO_PAGE[0].ppn;
         let data = pa.get_mut::<VdsoData>();
         *pa.get_mut::<VdsoData>() = VdsoData::new();
         // &mut *data
