@@ -8,6 +8,7 @@ pub struct TaskManager {
     // ready_queue: BTreeSet<Arc<TaskSched>>,
     ready_heap: [Arc<TaskSched, LockedHeapAllocator>; 128], // 使用数组代替VecDeque, 目前最大128
     size: usize, // 当前队列大小
+    empty: Arc<TaskSched, LockedHeapAllocator>, // 占位用
 }
 
 // const INITIAL_TIME_SLICES: [usize; MAX_PRIO + 1] = [
@@ -75,7 +76,7 @@ impl TaskSched {
 
 impl PartialEq for TaskSched {
     fn eq(&self, other: &Self) -> bool {
-        (self.get_dynamic_prio()) == (other.get_dynamic_prio()) && (self.id == other.id)
+        (self.get_dynamic_prio() == other.get_dynamic_prio()) && (self.id == other.id)
     }
 }
 
@@ -88,7 +89,7 @@ impl PartialOrd for TaskSched {
             if p1 == p2 {
                 self.id.cmp(&other.id)
             } else {
-                p1.cmp(&p2).reverse()
+                p1.cmp(&p2)
             }
         )
     }
@@ -102,46 +103,19 @@ impl Ord for TaskSched {
     }
 }
 
-impl PartialEq for UPIntrFreeCell<TaskSched> {
-    fn eq(&self, other: &Self) -> bool {
-        (self.exclusive_access().get_dynamic_prio()) == (other.exclusive_access().get_dynamic_prio()) && (self.exclusive_access().id == other.exclusive_access().id)
-    }
-}
-
-impl PartialOrd for UPIntrFreeCell<TaskSched> {
-    // 大根堆, 优先级高的任务在前
-    fn partial_cmp(&self, other: &Self) -> Option<core::cmp::Ordering> {
-        let p1 = self.exclusive_access().get_dynamic_prio();
-        let p2 = other.exclusive_access().get_dynamic_prio();
-        Some(
-            if p1 == p2 {
-                self.exclusive_access().id.cmp(&other.exclusive_access().id)
-            } else {
-                p1.cmp(&p2).reverse()
-            }
-        )
-    }
-}
-
-impl Eq for UPIntrFreeCell<TaskSched> {}
-
-impl Ord for UPIntrFreeCell<TaskSched> {
-    fn cmp(&self, other: &Self) -> core::cmp::Ordering {
-        self.partial_cmp(other).unwrap_or(core::cmp::Ordering::Equal)
-    }
-}
-
 impl TaskManager {
     pub fn new() -> Self {
+        let empty = Arc::new_in(
+            TaskSched::empty(),
+            TASK_SCHED_ALLOCATOR.clone()
+        );
         let manager = Self {
             ready_heap: core::array::from_fn(|_| {
                 // println!("Creating empty task in TaskManager");
-                Arc::new_in(
-                    TaskSched::empty(),
-                    TASK_SCHED_ALLOCATOR.clone()
-                )
+                empty.clone()
             }),
             size: 0,
+            empty,
         };
         // println!("TaskManager initialized with size: {}", manager.size);
         manager
@@ -160,7 +134,7 @@ impl TaskManager {
         while index > 0 {
             let parent_index = (index - 1) / 2;
             if self.ready_heap[index] > self.ready_heap[parent_index] {
-                // 交换, 保证不产生对core的引用
+                // 交换, 内联函数
                 self.ready_heap.swap(index, parent_index);
                 index = parent_index;
             } else {
@@ -175,10 +149,13 @@ impl TaskManager {
         }
         // 取出堆顶任务
         let task = self.ready_heap[0].clone();
+        // println!("fetch task: {:?} dynamic prio={}", task.id, task.get_dynamic_prio());
+        task.inner_exclusive_access().aging = 0; // 重置老化
         // 将最后一个任务放到堆顶
         self.size -= 1;
         if self.size > 0 {
             self.ready_heap[0] = self.ready_heap[self.size].clone();
+            self.ready_heap[self.size] = self.empty.clone();
             // 老化
             for i in 0..self.size {
                 let mut inner = self.ready_heap[i].inner_exclusive_access();
@@ -198,7 +175,7 @@ impl TaskManager {
                     largest = right_child;
                 }
                 if largest != index {
-                    // 交换, 保证不产生对core的引用
+                    // 交换, 内联函数
                     self.ready_heap.swap(index, largest);
                     index = largest;
                 } else {
