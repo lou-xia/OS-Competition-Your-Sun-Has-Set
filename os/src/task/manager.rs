@@ -68,6 +68,34 @@ impl Ord for TaskSched {
     }
 }
 
+impl PartialEq for UPIntrFreeCell<TaskSched> {
+    fn eq(&self, other: &Self) -> bool {
+        (self.exclusive_access().get_dynamic_prio()) == (other.exclusive_access().get_dynamic_prio()) && (self.exclusive_access().id == other.exclusive_access().id)
+    }
+}
+
+impl PartialOrd for UPIntrFreeCell<TaskSched> {
+    // 大根堆, 优先级高的任务在前
+    fn partial_cmp(&self, other: &Self) -> Option<core::cmp::Ordering> {
+        let p1 = self.exclusive_access().get_dynamic_prio();
+        let p2 = other.exclusive_access().get_dynamic_prio();
+        Some(
+            if p1 == p2 {
+                self.exclusive_access().id.cmp(&other.exclusive_access().id)
+            } else {
+                p1.cmp(&p2).reverse()
+            }
+        )
+    }
+}
+
+impl Eq for UPIntrFreeCell<TaskSched> {}
+
+impl Ord for UPIntrFreeCell<TaskSched> {
+    fn cmp(&self, other: &Self) -> core::cmp::Ordering {
+        self.partial_cmp(other).unwrap_or(core::cmp::Ordering::Equal)
+    }
+}
 
 impl TaskManager {
     pub fn new() -> Self {
@@ -82,21 +110,21 @@ impl TaskManager {
         // self.ready_queue.push_back(Task::new(task));
     }
 
-    pub fn fetch(&mut self) -> Option<Arc<TaskControlBlock>> {
+    pub fn fetch(&mut self) -> Option<Arc<UPIntrFreeCell<TaskSched>>> {
         let fetch_task = self.ready_queue.pop_first();
 
         // 将所有任务的老化值增加1, BTreeSet无法iter_mut, 所以需要先收集
         let mut collect = BTreeSet::new();
         while let Some(mut task) = self.ready_queue.pop_first() {
-            task.aging += 1;
+            task.exclusive_access().aging += 1;
             // println!("aging task {:?} to {}, dynamic priority: {}", task.id, task.aging, task.get_dynamic_prio());
             collect.insert(task);
         }
         // 重新插入老化后的任务
         self.ready_queue.extend(collect);
 
-        fetch_task.map(|t| t.task)
-        
+        // fetch_task.map(|t| t.exclusive_access())
+        fetch_task
         
         // self.ready_queue.pop_front().map(|task| {task.task})
 
@@ -121,7 +149,7 @@ pub fn wakeup_task(task: Arc<TaskControlBlock>) {
     add_task(task);
 }
 
-pub fn fetch_task() -> Option<Arc<TaskControlBlock>> {
+pub fn fetch_task() -> Option<Arc<UPIntrFreeCell<TaskSched>>> {
     TASK_MANAGER.exclusive_access().fetch()
 }
 

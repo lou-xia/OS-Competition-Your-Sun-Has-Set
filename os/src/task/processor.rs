@@ -1,14 +1,15 @@
 use super::__switch;
-use super::{ProcessControlBlock, TaskContext, TaskControlBlock};
+use super::{ProcessControlBlock, TaskContext, TaskControlBlock, TaskSched};
 use super::{TaskStatus, fetch_task};
 use crate::sync::UPIntrFreeCell;
+use crate::task::pid2process;
 use crate::trap::TrapContext;
 use alloc::sync::Arc;
 use core::arch::asm;
 use lazy_static::*;
 
 pub struct Processor {
-    current: Option<Arc<TaskControlBlock>>,
+    current: Option<Arc<UPIntrFreeCell<TaskSched>>>,
     idle_task_cx: TaskContext,
 }
 
@@ -22,10 +23,10 @@ impl Processor {
     fn get_idle_task_cx_ptr(&mut self) -> *mut TaskContext {
         &mut self.idle_task_cx as *mut _
     }
-    pub fn take_current(&mut self) -> Option<Arc<TaskControlBlock>> {
+    pub fn take_current(&mut self) -> Option<Arc<UPIntrFreeCell<TaskSched>>> {
         self.current.take()
     }
-    pub fn current(&self) -> Option<Arc<TaskControlBlock>> {
+    pub fn current(&self) -> Option<Arc<UPIntrFreeCell<TaskSched>>> {
         self.current.as_ref().map(Arc::clone)
     }
 }
@@ -41,7 +42,7 @@ pub fn run_tasks() {
         if let Some(task) = fetch_task() {
             let idle_task_cx_ptr = processor.get_idle_task_cx_ptr();
             // access coming task TCB exclusively
-            let next_task_cx_ptr = task.inner.exclusive_session(|task_inner| {
+            let next_task_cx_ptr = task.exclusive_session(|task_inner| {
                 task_inner.task_status = TaskStatus::Running;
                 &task_inner.task_cx as *const TaskContext
             });
@@ -58,11 +59,25 @@ pub fn run_tasks() {
 }
 
 pub fn take_current_task() -> Option<Arc<TaskControlBlock>> {
-    PROCESSOR.exclusive_access().take_current()
+    let task_sched = PROCESSOR.exclusive_access().take_current();
+    if let Some(task_sched) = task_sched {
+        let (pid, tid) = task_sched.exclusive_access().id;
+        let process = pid2process(pid).unwrap();
+        Some(process.inner_exclusive_access().get_task(tid))
+    } else {
+        None
+    }
 }
 
 pub fn current_task() -> Option<Arc<TaskControlBlock>> {
-    PROCESSOR.exclusive_access().current()
+    let task_sched = PROCESSOR.exclusive_access().current();
+    if let Some(task_sched) = task_sched {
+        let (pid, tid) = task_sched.exclusive_access().id;
+        let process = pid2process(pid).unwrap();
+        Some(process.inner_exclusive_access().get_task(tid))
+    } else {
+        None
+    }
 }
 
 pub fn current_process() -> Arc<ProcessControlBlock> {
