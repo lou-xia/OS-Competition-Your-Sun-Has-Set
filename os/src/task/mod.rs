@@ -19,7 +19,7 @@ use switch::__switch;
 
 pub use context::TaskContext;
 pub use id::{IDLE_PID, KernelStack, PidHandle, kstack_alloc, pid_alloc, MAX_PRIO, MIN_PRIO};
-pub use manager::{add_task, pid2process, remove_from_pid2process, wakeup_task, TaskSched};
+pub use manager::{add_task, pid2process, remove_from_pid2process, wakeup_task, TaskSched, TaskManager};
 pub use processor::{
     current_kstack_top, current_process, current_task, current_trap_cx, current_trap_cx_user_va,
     current_user_token, run_tasks, schedule, take_current_task,
@@ -32,7 +32,7 @@ pub fn suspend_current_and_run_next() {
     let task = take_current_task().unwrap();
 
     // ---- access current TCB exclusively
-    let mut task_inner = task.inner_exclusive_access();
+    let mut task_inner = task.sched.inner_exclusive_access();
     let task_cx_ptr = &mut task_inner.task_cx as *mut TaskContext;
     // Change status to Ready
     task_inner.task_status = TaskStatus::Ready;
@@ -40,7 +40,7 @@ pub fn suspend_current_and_run_next() {
     // ---- release current TCB
 
     // push back to ready queue.
-    add_task(task);
+    add_task(task.sched.clone());
     // jump to scheduling cycle
     schedule(task_cx_ptr);
 }
@@ -48,7 +48,7 @@ pub fn suspend_current_and_run_next() {
 /// This function must be followed by a schedule
 pub fn block_current_task() -> *mut TaskContext {
     let task = take_current_task().unwrap();
-    let mut task_inner = task.inner_exclusive_access();
+    let mut task_inner = task.sched.inner_exclusive_access();
     task_inner.task_status = TaskStatus::Blocked;
     &mut task_inner.task_cx as *mut TaskContext
 }

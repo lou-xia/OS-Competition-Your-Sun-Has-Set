@@ -2,40 +2,65 @@ use core::{alloc::Layout, ptr::NonNull};
 
 use buddy_system_allocator::LockedHeap;
 use lazy_static::lazy_static;
-use crate::{config::{PAGE_SIZE, VDSO_SIZE}, mm::{frame_alloc, frame_alloc_more, FrameTracker, PhysAddr}, sync::UPIntrFreeCell};
-use alloc::{alloc::{AllocError, Allocator}, sync::Arc, vec::{self, Vec}};
+use log::info;
+use crate::{config::{PAGE_SIZE, VDSO_SIZE}, mm::{frame_alloc_more, FrameTracker, PhysAddr}, sync::UPIntrFreeCell, task::TaskManager};
+use alloc::{alloc::{AllocError, Allocator}, sync::Arc, vec::Vec};
 
 pub struct VdsoData {
     pub num: usize,
+    pub task_manager: TaskManager,
 }
 
 impl VdsoData {
     pub fn new() -> Self {
         Self {
             num: 0,
+            task_manager: TaskManager::new(),
         }
     }
 }
 
 lazy_static! {
     pub static ref VDSO_PAGE: Arc<Vec<FrameTracker>> = {
-        let mut ppn = frame_alloc_more(VDSO_SIZE).unwrap();
+        // 分配VDSO所需的物理页, 16页给堆分配器, 1页给VDSO数据
+        let mut ppn = frame_alloc_more(VDSO_SIZE + 1).unwrap();
+        // for i in ppn.iter() {
+        //     println!("VDSO page at PPN: {:#x}", i.ppn.0);
+        // }
         ppn.reverse();
         unsafe {
             // 将前半交给堆分配器
-            TASK_SCHED_ALLOCATOR.0.lock().init(PhysAddr::from(ppn[0].ppn).into(), VDSO_SIZE * PAGE_SIZE / 2);
+            TASK_SCHED_ALLOCATOR.0.lock().init(PhysAddr::from(ppn[1].ppn).into(), VDSO_SIZE * PAGE_SIZE);
         }
         Arc::new(ppn)
     };
     pub static ref VDSO_DATA: Arc<UPIntrFreeCell<&'static mut VdsoData>> = {
-        let pa = VDSO_PAGE[0].ppn;
-        let data = pa.get_mut::<VdsoData>();
-        *pa.get_mut::<VdsoData>() = VdsoData::new();
+        // 取第一页
+        let pa: PhysAddr = VDSO_PAGE[0].ppn.into();
+        // println!("VDSO data at PA: {:#x}", pa.0);
+
+        // vdso转换成byte slice
+        let mut data = VdsoData::new();
+        let init_data = unsafe {
+            core::slice::from_raw_parts_mut(&mut data as *mut VdsoData as *mut u8, core::mem::size_of::<VdsoData>())
+        };
+
+        // 将数据写入第一页
+        unsafe {
+            core::ptr::copy_nonoverlapping(init_data.as_ptr(), pa.0 as *mut u8, init_data.len());
+        }
+
+        core::mem::forget(data); // 防止数据被释放
+
+        println!("VDSO data initialized");
         // &mut *data
-        Arc::new(unsafe {UPIntrFreeCell::new(data)})
+        Arc::new(unsafe {UPIntrFreeCell::new(pa.get_mut::<VdsoData>())})
     };
     // 用于分配Arc<TaskSched>所需的内存
-    pub static ref TASK_SCHED_ALLOCATOR: LockedHeapAllocator = LockedHeapAllocator(Arc::new(LockedHeap::empty()));
+    pub static ref TASK_SCHED_ALLOCATOR: LockedHeapAllocator = {
+        info!("[kernel] VDSO heap allocator initialized");
+        LockedHeapAllocator(Arc::new(LockedHeap::empty()))
+    };
 }
 
 #[derive(Clone)]

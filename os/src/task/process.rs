@@ -127,7 +127,7 @@ impl ProcessControlBlock {
         drop(process_inner);
         insert_into_pid2process(process.getpid(), Arc::clone(&process));
         // add main thread to scheduler
-        add_task(task);
+        add_task(task.sched.clone());
         process
     }
 
@@ -248,7 +248,7 @@ impl ProcessControlBlock {
         drop(task_inner);
         insert_into_pid2process(child.getpid(), Arc::clone(&child));
         // add this thread to scheduler
-        add_task(task);
+        add_task(task.sched.clone());
         child
     }
 

@@ -1,13 +1,13 @@
 use super::{ProcessControlBlock, TaskContext, TaskControlBlock, TaskStatus};
-use crate::sync::UPIntrFreeCell;
-use alloc::collections::btree_set::BTreeSet;
-use alloc::collections::BTreeMap;
-use alloc::sync::Arc;
+use crate::{sync::{UPIntrFreeCell, UPIntrRefMut}, vdso::vdso::{LockedHeapAllocator, TASK_SCHED_ALLOCATOR, VDSO_DATA}};
+use alloc::{collections::btree_map::BTreeMap, sync::Arc};
 use lazy_static::*;
 
 pub struct TaskManager {
     // ready_queue: VecDeque<Task>,
-    ready_queue: BTreeSet<Arc<UPIntrFreeCell<TaskSched>>>,
+    // ready_queue: BTreeSet<Arc<TaskSched>>,
+    ready_heap: [Arc<TaskSched, LockedHeapAllocator>; 128], // 使用数组代替VecDeque, 目前最大128
+    size: usize, // 当前队列大小
 }
 
 // const INITIAL_TIME_SLICES: [usize; MAX_PRIO + 1] = [
@@ -17,6 +17,10 @@ pub struct TaskManager {
 
 pub struct TaskSched {
     pub id: (usize, usize), // 任务ID(同时是线程id)
+    pub inner: UPIntrFreeCell<TaskSchedInner>,
+}
+
+pub struct TaskSchedInner {
     pub prio: usize, // 静态优先级
     pub aging: usize, // 老化机制, 用于防止饥饿
     pub task_cx: TaskContext,
@@ -27,15 +31,45 @@ impl TaskSched {
     pub fn new(pid: usize, tid: usize, prio: usize, task_cx: TaskContext, task_status: TaskStatus) -> Self {
         Self {
             id: (pid, tid),
-            prio,
-            aging: 0,
-            task_cx,
-            task_status,
+            inner: unsafe {
+                UPIntrFreeCell::new(TaskSchedInner {
+                    prio,
+                    aging: 0,
+                    task_cx,
+                    task_status,
+                })
+            },
         }
     }
 
+    pub fn empty() -> Self {
+        Self {
+            id: (0, 0),
+            inner: unsafe {
+                UPIntrFreeCell::new(TaskSchedInner {
+                    prio: 0,
+                    aging: 0,
+                    task_cx: TaskContext::zero_init(),
+                    task_status: TaskStatus::Ready,
+                })
+            },
+        }
+    }
+
+    pub fn inner_exclusive_access(&self) -> UPIntrRefMut<'_, TaskSchedInner> {
+        self.inner.exclusive_access()
+    }
+
+    pub fn inner_exclusive_session<F, R>(&self, f: F) -> R
+    where
+        F: FnOnce(&mut TaskSchedInner) -> R,
+    {
+        self.inner.exclusive_session(f)
+    }
+
     pub fn get_dynamic_prio(&self) -> usize {
-        self.prio + self.aging
+        let inner = self.inner_exclusive_access();
+        inner.prio + inner.aging
     }
 }
 
@@ -99,58 +133,97 @@ impl Ord for UPIntrFreeCell<TaskSched> {
 
 impl TaskManager {
     pub fn new() -> Self {
-        Self {
-            ready_queue: BTreeSet::new(),
-            
-            // ready_queue: VecDeque::new(),
+        let manager = Self {
+            ready_heap: core::array::from_fn(|_| {
+                // println!("Creating empty task in TaskManager");
+                Arc::new_in(
+                    TaskSched::empty(),
+                    TASK_SCHED_ALLOCATOR.clone()
+                )
+            }),
+            size: 0,
+        };
+        // println!("TaskManager initialized with size: {}", manager.size);
+        manager
+    }
+
+    // 关键: 不能使用core, 只能使用builtin
+    pub fn add(&mut self, task: Arc<TaskSched, LockedHeapAllocator>) {
+        if self.size >= self.ready_heap.len() {
+            panic!("TaskManager is full, cannot add more tasks");
+        }
+        // 插入任务到堆中
+        self.ready_heap[self.size] = task;
+        self.size += 1;
+        // 进行上滤操作
+        let mut index = self.size - 1;
+        while index > 0 {
+            let parent_index = (index - 1) / 2;
+            if self.ready_heap[index] > self.ready_heap[parent_index] {
+                // 交换, 保证不产生对core的引用
+                self.ready_heap.swap(index, parent_index);
+                index = parent_index;
+            } else {
+                break;
+            }
         }
     }
-    pub fn add(&mut self, task: Arc<TaskControlBlock>) {
-        self.ready_queue.insert(Task::new(task));
-        // self.ready_queue.push_back(Task::new(task));
-    }
 
-    pub fn fetch(&mut self) -> Option<Arc<UPIntrFreeCell<TaskSched>>> {
-        let fetch_task = self.ready_queue.pop_first();
-
-        // 将所有任务的老化值增加1, BTreeSet无法iter_mut, 所以需要先收集
-        let mut collect = BTreeSet::new();
-        while let Some(mut task) = self.ready_queue.pop_first() {
-            task.exclusive_access().aging += 1;
-            // println!("aging task {:?} to {}, dynamic priority: {}", task.id, task.aging, task.get_dynamic_prio());
-            collect.insert(task);
+    pub fn fetch(&mut self) -> Option<Arc<TaskSched, LockedHeapAllocator>> {
+        if self.size == 0 {
+            return None; // 没有任务可调度
         }
-        // 重新插入老化后的任务
-        self.ready_queue.extend(collect);
+        // 取出堆顶任务
+        let task = self.ready_heap[0].clone();
+        // 将最后一个任务放到堆顶
+        self.size -= 1;
+        if self.size > 0 {
+            self.ready_heap[0] = self.ready_heap[self.size].clone();
+            // 下滤操作
+            let mut index = 0;
+            while index < self.size {
+                let left_child = 2 * index + 1;
+                let right_child = 2 * index + 2;
+                let mut largest = index;
 
-        // fetch_task.map(|t| t.exclusive_access())
-        fetch_task
-        
-        // self.ready_queue.pop_front().map(|task| {task.task})
+                if left_child < self.size && self.ready_heap[left_child] > self.ready_heap[largest] {
+                    largest = left_child;
+                }
+                if right_child < self.size && self.ready_heap[right_child] > self.ready_heap[largest] {
+                    largest = right_child;
+                }
+                if largest != index {
+                    // 交换, 保证不产生对core的引用
+                    self.ready_heap.swap(index, largest);
+                    index = largest;
+                } else {
+                    break;
+                }
+            }
+        }
+        Some(task)
 
     }
 }
 
 lazy_static! {
-    pub static ref TASK_MANAGER: UPIntrFreeCell<TaskManager> =
-        unsafe { UPIntrFreeCell::new(TaskManager::new()) };
     pub static ref PID2PCB: UPIntrFreeCell<BTreeMap<usize, Arc<ProcessControlBlock>>> =
         unsafe { UPIntrFreeCell::new(BTreeMap::new()) };
 }
 
-pub fn add_task(task: Arc<TaskControlBlock>) {
-    TASK_MANAGER.exclusive_access().add(task);
+pub fn add_task(task: Arc<TaskSched, LockedHeapAllocator>) {
+    VDSO_DATA.exclusive_access().task_manager.add(task);
 }
 
 pub fn wakeup_task(task: Arc<TaskControlBlock>) {
-    let mut task_inner = task.inner_exclusive_access();
+    let mut task_inner = task.sched.inner_exclusive_access();
     task_inner.task_status = TaskStatus::Ready;
     drop(task_inner);
-    add_task(task);
+    add_task(task.sched.clone());
 }
 
-pub fn fetch_task() -> Option<Arc<UPIntrFreeCell<TaskSched>>> {
-    TASK_MANAGER.exclusive_access().fetch()
+pub fn fetch_task() -> Option<Arc<TaskSched, LockedHeapAllocator>> {
+    VDSO_DATA.exclusive_access().task_manager.fetch()
 }
 
 pub fn pid2process(pid: usize) -> Option<Arc<ProcessControlBlock>> {

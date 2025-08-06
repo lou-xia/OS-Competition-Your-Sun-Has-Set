@@ -13,7 +13,7 @@ pub struct TaskControlBlock {
     // immutable
     pub process: Weak<ProcessControlBlock>,
     pub kstack: KernelStack,
-    pub sched: Arc<UPIntrFreeCell<TaskSched>, LockedHeapAllocator>,
+    pub sched: Arc<TaskSched, LockedHeapAllocator>,
     // mutable
     pub inner: UPIntrFreeCell<TaskControlBlockInner>,
 }
@@ -55,15 +55,15 @@ impl TaskControlBlock {
         Self {
             process: Arc::downgrade(&process),
             kstack,
-            sched: Arc::new_in(unsafe {
-                UPIntrFreeCell::new(TaskSched::new(
-                        process.pid.0,
-                        res.tid,
-                        DEFAULT_PRIO,
-                        TaskContext::goto_trap_return(kstack_top),
-                        TaskStatus::Ready,
-                    ))
-            }, TASK_SCHED_ALLOCATOR.clone()),
+            sched: Arc::new_in(
+                TaskSched::new(
+                    process.pid.0,
+                    res.tid,
+                    DEFAULT_PRIO,
+                    TaskContext::goto_trap_return(kstack_top),
+                    TaskStatus::Ready,
+                )
+            , TASK_SCHED_ALLOCATOR.clone()),
             inner: unsafe {
                 UPIntrFreeCell::new(TaskControlBlockInner {
                     res: Some(res),

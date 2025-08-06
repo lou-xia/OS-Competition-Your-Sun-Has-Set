@@ -4,12 +4,13 @@ use super::{TaskStatus, fetch_task};
 use crate::sync::UPIntrFreeCell;
 use crate::task::pid2process;
 use crate::trap::TrapContext;
+use crate::vdso::vdso::LockedHeapAllocator;
 use alloc::sync::Arc;
 use core::arch::asm;
 use lazy_static::*;
 
 pub struct Processor {
-    current: Option<Arc<UPIntrFreeCell<TaskSched>>>,
+    current: Option<Arc<TaskSched, LockedHeapAllocator>>,
     idle_task_cx: TaskContext,
 }
 
@@ -23,10 +24,10 @@ impl Processor {
     fn get_idle_task_cx_ptr(&mut self) -> *mut TaskContext {
         &mut self.idle_task_cx as *mut _
     }
-    pub fn take_current(&mut self) -> Option<Arc<UPIntrFreeCell<TaskSched>>> {
+    pub fn take_current(&mut self) -> Option<Arc<TaskSched, LockedHeapAllocator>> {
         self.current.take()
     }
-    pub fn current(&self) -> Option<Arc<UPIntrFreeCell<TaskSched>>> {
+    pub fn current(&self) -> Option<Arc<TaskSched, LockedHeapAllocator>> {
         self.current.as_ref().map(Arc::clone)
     }
 }
@@ -42,7 +43,7 @@ pub fn run_tasks() {
         if let Some(task) = fetch_task() {
             let idle_task_cx_ptr = processor.get_idle_task_cx_ptr();
             // access coming task TCB exclusively
-            let next_task_cx_ptr = task.exclusive_session(|task_inner| {
+            let next_task_cx_ptr = task.inner_exclusive_session(|task_inner| {
                 task_inner.task_status = TaskStatus::Running;
                 &task_inner.task_cx as *const TaskContext
             });
@@ -61,7 +62,7 @@ pub fn run_tasks() {
 pub fn take_current_task() -> Option<Arc<TaskControlBlock>> {
     let task_sched = PROCESSOR.exclusive_access().take_current();
     if let Some(task_sched) = task_sched {
-        let (pid, tid) = task_sched.exclusive_access().id;
+        let (pid, tid) = task_sched.id;
         let process = pid2process(pid).unwrap();
         Some(process.inner_exclusive_access().get_task(tid))
     } else {
@@ -72,7 +73,7 @@ pub fn take_current_task() -> Option<Arc<TaskControlBlock>> {
 pub fn current_task() -> Option<Arc<TaskControlBlock>> {
     let task_sched = PROCESSOR.exclusive_access().current();
     if let Some(task_sched) = task_sched {
-        let (pid, tid) = task_sched.exclusive_access().id;
+        let (pid, tid) = task_sched.id;
         let process = pid2process(pid).unwrap();
         Some(process.inner_exclusive_access().get_task(tid))
     } else {
