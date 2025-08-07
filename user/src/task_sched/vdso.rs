@@ -3,7 +3,7 @@ use core::panic;
 use alloc::sync::Arc;
 
 use crate::task_sched::{
-    manager::{LockedHeapAllocator, TaskManager}, switch::__switch, task::{TaskContext, TaskSched, TaskStatus}, vdso, PROCESSOR_NUM, USER_VDSO_BASE
+    manager::{LockedHeapAllocator, TaskManager}, switch::__switch, task::{TaskContext, TaskSched, TaskStatus}, vdso, PAGE_SIZE, PROCESSOR_NUM, USER_VDSO_BASE, VDSO_SIZE
 };
 
 pub struct VdsoData {
@@ -15,11 +15,16 @@ pub fn user_schedule() {
     unsafe {
         let vdso_data = USER_VDSO_BASE as *mut VdsoData;
         for i in 0..PROCESSOR_NUM {
+
             if (*vdso_data).current_task[i].is_none() {
                 panic!("No current task in user space!");
             }
             println!("!!!!!!!!!!!!");
+            println!("vdso range: {:#x} - {:#x}", USER_VDSO_BASE, USER_VDSO_BASE + VDSO_SIZE * PAGE_SIZE);
+            // println!(2);
+            println!("current task address: {:p}", Arc::as_ptr(&(*vdso_data).current_task[i].as_ref().unwrap()));
             if let Some(task) = (*vdso_data).current_task[i].clone() {
+                println!(2);
                 let task_cx = task.inner_exclusive_session(|task_inner| {
                     task_inner.task_status = TaskStatus::Ready;
                     &mut task_inner.task_cx as *mut TaskContext

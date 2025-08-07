@@ -3,7 +3,7 @@ use core::{alloc::Layout, ptr::NonNull};
 use buddy_system_allocator::LockedHeap;
 use lazy_static::lazy_static;
 use log::info;
-use crate::{config::{PAGE_SIZE, PROCESSOR_NUM, VDSO_SIZE}, mm::{frame_alloc_more, FrameTracker, PhysAddr}, sync::UPIntrFreeCell, task::{TaskManager, TaskSched}};
+use crate::{config::{KERNEL_VDSO_BASE, PAGE_SIZE, PROCESSOR_NUM, VDSO_SIZE}, mm::{frame_alloc_more, FrameTracker}, sync::UPIntrFreeCell, task::{TaskManager, TaskSched}};
 use alloc::{alloc::{AllocError, Allocator}, sync::Arc, vec::Vec};
 
 pub struct VdsoData {
@@ -28,15 +28,11 @@ lazy_static! {
         //     println!("VDSO page at PPN: {:#x}", i.ppn.0);
         // }
         ppn.reverse();
-        unsafe {
-            // 将前半交给堆分配器
-            TASK_SCHED_ALLOCATOR.0.lock().init(PhysAddr::from(ppn[1].ppn).into(), (VDSO_SIZE - 1) * PAGE_SIZE);
-        }
         Arc::new(ppn)
     };
     pub static ref VDSO_DATA: Arc<UPIntrFreeCell<&'static mut VdsoData>> = {
         // 取第一页
-        let pa: PhysAddr = VDSO_PAGE[0].ppn.into();
+        let va: usize = KERNEL_VDSO_BASE;
         // println!("VDSO data at PA: {:#x}", pa.0);
 
         // vdso转换成byte slice
@@ -47,19 +43,26 @@ lazy_static! {
 
         // 将数据写入第一页
         unsafe {
-            core::ptr::copy_nonoverlapping(init_data.as_ptr(), pa.0 as *mut u8, init_data.len());
+            core::ptr::copy_nonoverlapping(init_data.as_ptr(), va as *mut u8, init_data.len());
         }
 
         core::mem::forget(data); // 防止数据被释放
 
         println!("VDSO data initialized");
         // &mut *data
-        Arc::new(unsafe {UPIntrFreeCell::new(pa.get_mut::<VdsoData>())})
+        Arc::new(unsafe {UPIntrFreeCell::new(&mut *(va as *mut VdsoData))})
     };
     // 用于分配Arc<TaskSched>所需的内存
     pub static ref TASK_SCHED_ALLOCATOR: LockedHeapAllocator = {
         info!("[kernel] VDSO heap allocator initialized");
-        LockedHeapAllocator(Arc::new(LockedHeap::empty()))
+        let alloc = LockedHeapAllocator(Arc::new(LockedHeap::empty()));
+        unsafe {
+            // 将前半交给堆分配器
+            alloc.0.lock().init(KERNEL_VDSO_BASE + PAGE_SIZE, (VDSO_SIZE - 1) * PAGE_SIZE);
+        }
+        println!("VDSO heap allocator address: {:p}", Arc::as_ptr(&alloc.0));
+        println!("VDSO heap allocator: {:p}", &alloc);
+        alloc
     };
 }
 
