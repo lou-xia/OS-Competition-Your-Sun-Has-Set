@@ -1,6 +1,7 @@
 #![no_std]
 #![feature(linkage)]
 #![feature(alloc_error_handler)]
+#![feature(allocator_api)]
 
 #[macro_use]
 pub mod console;
@@ -11,6 +12,7 @@ mod net;
 mod sync;
 mod syscall;
 mod task;
+pub mod task_sched;
 pub mod coroutine;
 pub mod coroutine_lib;
 

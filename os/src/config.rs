@@ -11,6 +11,7 @@ pub const TRAP_CONTEXT_BASE: usize = TRAMPOLINE - PAGE_SIZE;
 
 pub const KERNEL_VDSO_BASE: usize = usize::MAX - 256 * 0x4000_0000 + 1;
 pub const USER_VDSO_BASE: usize = KERNEL_VDSO_BASE;
-pub const VDSO_SIZE: usize = 16;
+pub const VDSO_SIZE: usize = 17;
+pub const PROCESSOR_NUM: usize = 1;
 
 pub use crate::board::{CLOCK_FREQ, MEMORY_END, MMIO};

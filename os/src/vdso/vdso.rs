@@ -3,19 +3,19 @@ use core::{alloc::Layout, ptr::NonNull};
 use buddy_system_allocator::LockedHeap;
 use lazy_static::lazy_static;
 use log::info;
-use crate::{config::{PAGE_SIZE, VDSO_SIZE}, mm::{frame_alloc_more, FrameTracker, PhysAddr}, sync::UPIntrFreeCell, task::TaskManager};
+use crate::{config::{PAGE_SIZE, PROCESSOR_NUM, VDSO_SIZE}, mm::{frame_alloc_more, FrameTracker, PhysAddr}, sync::UPIntrFreeCell, task::{TaskManager, TaskSched}};
 use alloc::{alloc::{AllocError, Allocator}, sync::Arc, vec::Vec};
 
 pub struct VdsoData {
-    pub num: usize,
     pub task_manager: TaskManager,
+    pub current_task: [Option<Arc<TaskSched, LockedHeapAllocator>>; PROCESSOR_NUM],
 }
 
 impl VdsoData {
     pub fn new() -> Self {
         Self {
-            num: 0,
             task_manager: TaskManager::new(),
+            current_task: [None; PROCESSOR_NUM],
         }
     }
 }
@@ -23,14 +23,14 @@ impl VdsoData {
 lazy_static! {
     pub static ref VDSO_PAGE: Arc<Vec<FrameTracker>> = {
         // 分配VDSO所需的物理页, 16页给堆分配器, 1页给VDSO数据
-        let mut ppn = frame_alloc_more(VDSO_SIZE + 1).unwrap();
+        let mut ppn = frame_alloc_more(VDSO_SIZE).unwrap();
         // for i in ppn.iter() {
         //     println!("VDSO page at PPN: {:#x}", i.ppn.0);
         // }
         ppn.reverse();
         unsafe {
             // 将前半交给堆分配器
-            TASK_SCHED_ALLOCATOR.0.lock().init(PhysAddr::from(ppn[1].ppn).into(), VDSO_SIZE * PAGE_SIZE);
+            TASK_SCHED_ALLOCATOR.0.lock().init(PhysAddr::from(ppn[1].ppn).into(), (VDSO_SIZE - 1) * PAGE_SIZE);
         }
         Arc::new(ppn)
     };
