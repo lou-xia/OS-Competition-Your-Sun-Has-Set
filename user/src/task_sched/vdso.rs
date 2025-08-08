@@ -3,7 +3,7 @@ use core::panic;
 use alloc::sync::Arc;
 
 use crate::task_sched::{
-    manager::{LockedHeapAllocator, TaskManager}, switch::__switch, task::{TaskContext, TaskSched, TaskStatus}, vdso, PAGE_SIZE, PROCESSOR_NUM, USER_VDSO_BASE, VDSO_SIZE
+    manager::{LockedHeapAllocator, TaskManager}, switch::__switch, task::{TaskContext, TaskSched, TaskStatus}, PAGE_SIZE, PROCESSOR_NUM, USER_VDSO_BASE, VDSO_SIZE
 };
 
 pub struct VdsoData {
@@ -22,7 +22,14 @@ pub fn user_schedule() {
             println!("!!!!!!!!!!!!");
             println!("vdso range: {:#x} - {:#x}", USER_VDSO_BASE, USER_VDSO_BASE + VDSO_SIZE * PAGE_SIZE);
             // println!(2);
-            println!("current task address: {:p}", Arc::as_ptr(&(*vdso_data).current_task[i].as_ref().unwrap()));
+            let ptr = Arc::as_ptr(&(*vdso_data).current_task[i].as_ref().unwrap());
+            println!("current task address: {:p}", ptr);
+            println!("refcount: {}", Arc::strong_count(&(*vdso_data).current_task[i].as_ref().unwrap()));
+        
+            // println!("current task id: {:?}", (*vdso_data).current_task[i].as_ref().unwrap().get_dynamic_prio());
+            let _unused = (*vdso_data).current_task[i].clone();
+
+            println!(1);
             if let Some(task) = (*vdso_data).current_task[i].clone() {
                 println!(2);
                 let task_cx = task.inner_exclusive_session(|task_inner| {

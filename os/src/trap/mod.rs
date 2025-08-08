@@ -94,6 +94,10 @@ pub fn trap_handler() -> ! {
             current_add_signal(SignalFlags::SIGSEGV);
         }
         Trap::Exception(Exception::IllegalInstruction) => {
+            println!(
+                "[kernel] Illegal instruction in application, bad instruction = {:#x}, kernel killed it.",
+                current_trap_cx().sepc,
+            );
             current_add_signal(SignalFlags::SIGILL);
         }
         Trap::Interrupt(Interrupt::SupervisorTimer) => {

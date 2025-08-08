@@ -42,6 +42,7 @@ impl TaskSched {
     }
 
     pub fn inner_exclusive_access(&self) -> UPIntrRefMut<'_, TaskSchedInner> {
+        println!(1);
         self.inner.exclusive_access()
     }
 

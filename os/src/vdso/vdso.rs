@@ -1,4 +1,4 @@
-use core::{alloc::Layout, ptr::NonNull};
+use core::{alloc::Layout, pin::Pin, ptr::NonNull};
 
 use buddy_system_allocator::LockedHeap;
 use lazy_static::lazy_static;
@@ -30,7 +30,7 @@ lazy_static! {
         ppn.reverse();
         Arc::new(ppn)
     };
-    pub static ref VDSO_DATA: Arc<UPIntrFreeCell<&'static mut VdsoData>> = {
+    pub static ref VDSO_DATA: UPIntrFreeCell<&'static mut VdsoData> = {
         // 取第一页
         let va: usize = KERNEL_VDSO_BASE;
         // println!("VDSO data at PA: {:#x}", pa.0);
@@ -50,34 +50,52 @@ lazy_static! {
 
         println!("VDSO data initialized");
         // &mut *data
-        Arc::new(unsafe {UPIntrFreeCell::new(&mut *(va as *mut VdsoData))})
+        unsafe {UPIntrFreeCell::new(&mut *(va as *mut VdsoData))}
     };
+    
+}
+
+lazy_static! {
+    pub static ref VDSO_HEAP: &'static LockedHeap = {
+        let va: usize = KERNEL_VDSO_BASE + core::mem::size_of::<VdsoData>();
+        let heap = LockedHeap::empty(); // 创建一个空的堆
+        unsafe {
+            // 写入到va地址上
+            core::ptr::write(va as *mut LockedHeap, heap);
+            core::mem::transmute(va as *const LockedHeap)
+        }
+    };
+
     // 用于分配Arc<TaskSched>所需的内存
     pub static ref TASK_SCHED_ALLOCATOR: LockedHeapAllocator = {
         info!("[kernel] VDSO heap allocator initialized");
-        let alloc = LockedHeapAllocator(Arc::new(LockedHeap::empty()));
+        let alloc = LockedHeapAllocator(&VDSO_HEAP);
         unsafe {
             // 将前半交给堆分配器
             alloc.0.lock().init(KERNEL_VDSO_BASE + PAGE_SIZE, (VDSO_SIZE - 1) * PAGE_SIZE);
         }
-        println!("VDSO heap allocator address: {:p}", Arc::as_ptr(&alloc.0));
+        println!("VDSO heap allocator address: {:p}", alloc.0);
         println!("VDSO heap allocator: {:p}", &alloc);
         alloc
     };
 }
 
 #[derive(Clone)]
-pub struct LockedHeapAllocator(pub Arc<LockedHeap>);
+pub struct LockedHeapAllocator(&'static LockedHeap);
+
+unsafe impl Send for LockedHeapAllocator {}
 
 unsafe impl Allocator for LockedHeapAllocator {
     fn allocate(&self, layout: Layout) -> Result<NonNull<[u8]>, AllocError> {
         let mut heap = self.0.lock();
+
         let ptr = heap.alloc(layout).map_err(|_| AllocError)?;
-        Ok(NonNull::slice_from_raw_parts(ptr, layout.size()))
+        Ok(NonNull::slice_from_raw_parts(ptr, layout.size()))    
     }
 
     unsafe fn deallocate(&self, ptr: NonNull<u8>, layout: Layout) {
         let mut heap = self.0.lock();
+        
         heap.dealloc(ptr, layout);
     }
 }
