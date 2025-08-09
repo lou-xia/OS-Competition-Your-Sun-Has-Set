@@ -1,8 +1,10 @@
-use crate::task_sched::up::{UPIntrFreeCell, UPIntrRefMut};
+use super::ticket_lock::{TicketGuard, TicketLock};
+
+
 
 pub struct TaskSched {
     pub id: (usize, usize), // 任务ID(同时是线程id)
-    pub inner: UPIntrFreeCell<TaskSchedInner>,
+    pub inner: TicketLock<TaskSchedInner>,
 }
 
 pub struct TaskSchedInner {
@@ -16,41 +18,42 @@ impl TaskSched {
     pub fn new(pid: usize, tid: usize, prio: usize, task_cx: TaskContext, task_status: TaskStatus) -> Self {
         Self {
             id: (pid, tid),
-            inner: unsafe {
-                UPIntrFreeCell::new(TaskSchedInner {
+            inner: 
+                TicketLock::new(TaskSchedInner {
                     prio,
                     aging: 0,
                     task_cx,
                     task_status,
                 })
-            },
+            ,
         }
     }
 
     pub fn empty() -> Self {
         Self {
             id: (0, 0),
-            inner: unsafe {
-                UPIntrFreeCell::new(TaskSchedInner {
+            inner: 
+                TicketLock::new(TaskSchedInner {
                     prio: 0,
                     aging: 0,
                     task_cx: TaskContext::zero_init(),
                     task_status: TaskStatus::Ready,
                 })
-            },
+            ,
         }
     }
 
-    pub fn inner_exclusive_access(&self) -> UPIntrRefMut<'_, TaskSchedInner> {
-        println!(1);
-        self.inner.exclusive_access()
+    pub fn inner_exclusive_access(&self) -> TicketGuard<'_, TaskSchedInner> {
+        // println!(1);
+        self.inner.lock()
     }
 
     pub fn inner_exclusive_session<F, R>(&self, f: F) -> R
     where
         F: FnOnce(&mut TaskSchedInner) -> R,
     {
-        self.inner.exclusive_session(f)
+        let mut guard = self.inner.lock();
+        f(&mut *guard)
     }
 
     pub fn get_dynamic_prio(&self) -> usize {

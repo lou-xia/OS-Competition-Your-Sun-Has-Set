@@ -2,7 +2,7 @@ use super::id::{TaskUserRes, DEFAULT_PRIO};
 use super::manager::TaskSched;
 use super::{KernelStack, ProcessControlBlock, TaskContext, kstack_alloc};
 use crate::trap::TrapContext;
-use crate::vdso::vdso::{LockedHeapAllocator, TASK_SCHED_ALLOCATOR};
+use crate::vdso::vdso::{LockedHeapAllocator, VDSO_HEAP_ALLOCATOR};
 use crate::{
     mm::PhysPageNum,
     sync::{UPIntrFreeCell, UPIntrRefMut},
@@ -63,7 +63,7 @@ impl TaskControlBlock {
                     TaskContext::goto_trap_return(kstack_top),
                     TaskStatus::Ready,
                 )
-            , TASK_SCHED_ALLOCATOR.clone()),
+            , VDSO_HEAP_ALLOCATOR.clone()),
             inner: unsafe {
                 UPIntrFreeCell::new(TaskControlBlockInner {
                     res: Some(res),

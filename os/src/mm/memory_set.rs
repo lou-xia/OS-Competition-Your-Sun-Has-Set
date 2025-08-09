@@ -3,7 +3,7 @@ use super::{PTEFlags, PageTable, PageTableEntry};
 use super::{PhysAddr, PhysPageNum, VirtAddr, VirtPageNum};
 use super::{StepByOne, VPNRange};
 use crate::config::{
-    KERNEL_VDSO_BASE, MEMORY_END, MMIO, PAGE_SIZE, TRAMPOLINE, USER_VDSO_BASE, VDSO_SIZE,
+    KERNEL_VDSO_BASE, MEMORY_END, MMIO, PAGE_SIZE, TRAMPOLINE, USER_VDSO_BASE, VDSO_PAGES,
 };
 use crate::sync::UPIntrFreeCell;
 use crate::vdso::vdso::VDSO_PAGE;
@@ -94,7 +94,7 @@ impl MemorySet {
         );
     }
     fn map_kernel_vdso(&mut self) {
-        for i in 0..VDSO_SIZE {
+        for i in 0..VDSO_PAGES {
             self.page_table.map(
                 VirtAddr::from(KERNEL_VDSO_BASE + i * PAGE_SIZE).into(),
                 VDSO_PAGE[i].ppn,
@@ -105,11 +105,11 @@ impl MemorySet {
         let ppn = VDSO_PAGE[0].ppn;
         info!(
             "VDSO area: vpn: {:?}, ppn: {:?}, PageNum: {:?}",
-            vpn, ppn, VDSO_SIZE
+            vpn, ppn, VDSO_PAGES
         );
     }
     fn map_user_vdso(&mut self) {
-        for i in 0..VDSO_SIZE {
+        for i in 0..VDSO_PAGES {
             self.page_table.map(
                 VirtAddr::from(USER_VDSO_BASE + i * PAGE_SIZE).into(),
                 VDSO_PAGE[i].ppn,

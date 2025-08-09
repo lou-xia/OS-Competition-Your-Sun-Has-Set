@@ -1,7 +1,7 @@
 pub mod vdso;
 pub mod manager;
 pub mod task;
-pub mod up;
+pub mod ticket_lock;
 
 mod switch;
 

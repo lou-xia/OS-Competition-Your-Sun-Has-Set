@@ -1,5 +1,5 @@
 use super::{ProcessControlBlock, TaskContext, TaskControlBlock, TaskStatus};
-use crate::{sync::{UPIntrFreeCell, UPIntrRefMut}, vdso::vdso::{LockedHeapAllocator, TASK_SCHED_ALLOCATOR, VDSO_DATA}};
+use crate::{sync::{TicketGuard, TicketLock, UPIntrFreeCell}, vdso::vdso::{LockedHeapAllocator, VDSO_DATA, VDSO_HEAP_ALLOCATOR}};
 use alloc::{collections::btree_map::BTreeMap, sync::Arc};
 use lazy_static::*;
 
@@ -18,7 +18,7 @@ pub struct TaskManager {
 
 pub struct TaskSched {
     pub id: (usize, usize), // 任务ID(同时是线程id)
-    pub inner: UPIntrFreeCell<TaskSchedInner>,
+    pub inner: TicketLock<TaskSchedInner>,
 }
 
 pub struct TaskSchedInner {
@@ -32,42 +32,46 @@ impl TaskSched {
     pub fn new(pid: usize, tid: usize, prio: usize, task_cx: TaskContext, task_status: TaskStatus) -> Self {
         Self {
             id: (pid, tid),
-            inner: unsafe {
-                UPIntrFreeCell::new(TaskSchedInner {
+            inner:
+                TicketLock::new(TaskSchedInner {
                     prio,
                     aging: 0,
                     task_cx,
                     task_status,
                 })
-            },
+            ,
         }
     }
 
     pub fn empty() -> Self {
         Self {
             id: (0, 0),
-            inner: unsafe {
-                UPIntrFreeCell::new(TaskSchedInner {
+            inner: 
+                TicketLock::new(TaskSchedInner {
                     prio: 0,
                     aging: 0,
                     task_cx: TaskContext::zero_init(),
                     task_status: TaskStatus::Ready,
                 })
-            },
+            ,
         }
     }
 
-    pub fn inner_exclusive_access(&self) -> UPIntrRefMut<'_, TaskSchedInner> {
-        self.inner.exclusive_access()
+    #[inline]
+    pub fn inner_exclusive_access(&self) -> TicketGuard<'_, TaskSchedInner> {
+        self.inner.lock()
     }
 
+    #[inline]
     pub fn inner_exclusive_session<F, R>(&self, f: F) -> R
     where
         F: FnOnce(&mut TaskSchedInner) -> R,
     {
-        self.inner.exclusive_session(f)
+        let mut inner = self.inner.lock();
+        f(&mut inner)
     }
 
+    #[inline]
     pub fn get_dynamic_prio(&self) -> usize {
         let inner = self.inner_exclusive_access();
         inner.prio + inner.aging
@@ -107,7 +111,7 @@ impl TaskManager {
     pub fn new() -> Self {
         let empty = Arc::new_in(
             TaskSched::empty(),
-            TASK_SCHED_ALLOCATOR.clone()
+            VDSO_HEAP_ALLOCATOR.clone()
         );
         let manager = Self {
             ready_heap: core::array::from_fn(|_| {
