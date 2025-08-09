@@ -52,18 +52,17 @@ impl TaskControlBlock {
         let trap_cx_ppn = res.trap_cx_ppn();
         let kstack = kstack_alloc();
         let kstack_top = kstack.get_top();
-        Self {
-            process: Arc::downgrade(&process),
-            kstack,
-            sched: Arc::new_in(
-                TaskSched::new(
+        let sched = TaskSched::new(
                     process.pid.0,
                     res.tid,
                     DEFAULT_PRIO,
                     TaskContext::goto_trap_return(kstack_top),
                     TaskStatus::Ready,
-                )
-            , VDSO_HEAP_ALLOCATOR.clone()),
+                );
+        let r = Self {
+            process: Arc::downgrade(&process),
+            kstack,
+            sched: Arc::new_in(sched, *VDSO_HEAP_ALLOCATOR),
             inner: unsafe {
                 UPIntrFreeCell::new(TaskControlBlockInner {
                     res: Some(res),
@@ -71,7 +70,8 @@ impl TaskControlBlock {
                     exit_code: None,
                 })
             },
-        }
+        };
+        r
     }
 }
 

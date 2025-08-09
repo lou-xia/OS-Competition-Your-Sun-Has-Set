@@ -69,7 +69,7 @@ lazy_static! {
     // 用于分配Arc<TaskSched>所需的内存
     pub static ref VDSO_HEAP_ALLOCATOR: LockedHeapAllocator = {
         info!("[kernel] VDSO heap allocator initialized");
-        let alloc = LockedHeapAllocator(&VDSO_HEAP);
+        let alloc = LockedHeapAllocator(*VDSO_HEAP);
         unsafe {
             // 将前半交给堆分配器
             alloc.0.lock().init(KERNEL_VDSO_BASE + PAGE_SIZE * VDSO_DATA_PAGES, VDSO_HEAP_PAGES * PAGE_SIZE);
@@ -80,7 +80,7 @@ lazy_static! {
     };
 }
 
-#[derive(Clone)]
+#[derive(Clone, Copy)]
 pub struct LockedHeapAllocator(&'static LockedHeap);
 
 unsafe impl Send for LockedHeapAllocator {}
@@ -88,8 +88,8 @@ unsafe impl Send for LockedHeapAllocator {}
 unsafe impl Allocator for LockedHeapAllocator {
     fn allocate(&self, layout: Layout) -> Result<NonNull<[u8]>, AllocError> {
         let mut heap = self.0.lock();
-
         let ptr = heap.alloc(layout).map_err(|_| AllocError)?;
+        drop(heap);
         Ok(NonNull::slice_from_raw_parts(ptr, layout.size()))    
     }
 
@@ -97,6 +97,7 @@ unsafe impl Allocator for LockedHeapAllocator {
         let mut heap = self.0.lock();
         
         heap.dealloc(ptr, layout);
+        drop(heap);
     }
 }
 

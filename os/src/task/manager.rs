@@ -111,7 +111,7 @@ impl TaskManager {
     pub fn new() -> Self {
         let empty = Arc::new_in(
             TaskSched::empty(),
-            VDSO_HEAP_ALLOCATOR.clone()
+            *VDSO_HEAP_ALLOCATOR
         );
         let manager = Self {
             ready_heap: core::array::from_fn(|_| {

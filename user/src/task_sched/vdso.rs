@@ -22,7 +22,8 @@ pub fn user_schedule() {
         if vdso_data.current_task[i].is_none() {
             panic!("No current task in user space!");
         }
-        println!("!!!!!!!!!!!!");
+        // println!("!!!!!!!!!!!!");
+        // println!("tasks: {}", vdso_data.task_manager.get_size());
 
         // println!(1);
         if let Some(task) = vdso_data.current_task[i].clone() {
@@ -31,9 +32,7 @@ pub fn user_schedule() {
             if let Some(next_task_ref) = task_manager.peek() {
                 if next_task_ref.id.0 == task.id.0 {
                     // 同一地址空间，由用户进行调度
-                    if next_task_ref.id.1 == task.id.1 {
-                        continue; // 同一任务，不需要切换
-                    }
+                    assert_ne!(next_task_ref.id.1, task.id.1, "Two tasks with same TID in user space!");
                     // 取出下一个任务
                     let next_task = task_manager.fetch().unwrap();
                     let task_cx = task.inner_exclusive_session(|task_inner| {
@@ -55,7 +54,7 @@ pub fn user_schedule() {
                     sys_yield();
                 }
             } else {
-                panic!("No next task in user space!");
+                // 继续运行即可
             }
         } else {
             panic!("No current task in user space!");

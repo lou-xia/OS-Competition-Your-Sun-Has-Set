@@ -85,16 +85,20 @@ impl TaskManager {
             Some(&self.ready_heap[0])
         }
     }
+
+    pub fn get_size(&self) -> usize {
+        self.size
+    }
 }
 
-#[derive(Clone)]
-pub struct LockedHeapAllocator(pub Arc<LockedHeap>);
+#[derive(Clone, Copy)]
+pub struct LockedHeapAllocator(&'static LockedHeap);
 
 unsafe impl Allocator for LockedHeapAllocator {
     fn allocate(&self, layout: Layout) -> Result<NonNull<[u8]>, AllocError> {
         let mut heap = self.0.lock();
         let ptr = heap.alloc(layout).map_err(|_| AllocError)?;
-        Ok(NonNull::slice_from_raw_parts(ptr, layout.size()))
+        Ok(NonNull::slice_from_raw_parts(ptr, layout.size()))    
     }
 
     unsafe fn deallocate(&self, ptr: NonNull<u8>, layout: Layout) {
