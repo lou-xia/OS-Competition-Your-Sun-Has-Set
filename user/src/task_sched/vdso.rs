@@ -27,10 +27,6 @@ pub fn user_schedule() {
         // println!(1);
         if let Some(task) = vdso_data.current_task[i].clone() {
             // println!(2);
-            let task_cx = task.inner_exclusive_session(|task_inner| {
-                task_inner.task_status = TaskStatus::Ready;
-                &mut task_inner.task_cx as *mut TaskContext
-            });
             let task_manager = &mut vdso_data.task_manager;
             if let Some(next_task_ref) = task_manager.peek() {
                 if next_task_ref.id.0 == task.id.0 {
@@ -40,11 +36,16 @@ pub fn user_schedule() {
                     }
                     // 取出下一个任务
                     let next_task = task_manager.fetch().unwrap();
+                    let task_cx = task.inner_exclusive_session(|task_inner| {
+                        task_inner.task_status = TaskStatus::Ready;
+                        &mut task_inner.task_cx as *mut TaskContext
+                    });
                     let next_task_cx = task.inner_exclusive_session(|task_inner| {
                         task_inner.task_status = TaskStatus::Running;
                         &task_inner.task_cx as *const TaskContext
                     });
                     vdso_data.current_task[i] = Some(next_task);
+                    // 添加任务到任务管理器
                     task_manager.add(task);
                     unsafe {
                         __switch(task_cx, next_task_cx);
