@@ -48,7 +48,7 @@ lazy_static! {
 
         core::mem::forget(data); // 防止数据被释放
 
-        println!("VDSO data initialized");
+        println!("[kernel] VDSO data initialized");
         // &mut *data
         unsafe {Arc::new(UPIntrFreeCell::new(&mut *(va as *mut VdsoData)))}
     };
@@ -62,7 +62,7 @@ lazy_static! {
         unsafe {
             // 写入到va地址上
             core::ptr::write(va as *mut LockedHeap, heap);
-            core::mem::transmute(va as *const LockedHeap)
+            &*(va as *const LockedHeap) // 返回一个指向堆的引用
         }
     };
 
@@ -74,8 +74,8 @@ lazy_static! {
             // 将前半交给堆分配器
             alloc.0.lock().init(KERNEL_VDSO_BASE + PAGE_SIZE * VDSO_DATA_PAGES, VDSO_HEAP_PAGES * PAGE_SIZE);
         }
-        println!("VDSO heap allocator address: {:p}", alloc.0);
-        println!("VDSO heap allocator: {:p}", &alloc);
+        // println!("VDSO heap allocator address: {:p}", alloc.0);
+        // println!("VDSO heap allocator: {:p}", &alloc);
         alloc
     };
 }

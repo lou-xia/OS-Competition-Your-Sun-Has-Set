@@ -77,6 +77,14 @@ impl TaskManager {
         Some(task)
 
     }
+
+    pub fn peek(&self) -> Option<&Arc<TaskSched, LockedHeapAllocator>> {
+        if self.size == 0 {
+            None
+        } else {
+            Some(&self.ready_heap[0])
+        }
+    }
 }
 
 #[derive(Clone)]
