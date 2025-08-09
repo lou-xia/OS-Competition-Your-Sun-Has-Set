@@ -2,9 +2,9 @@ use core::panic;
 
 use alloc::sync::Arc;
 
-use crate::task_sched::{
+use crate::{syscall::sys_yield, task_sched::{
     manager::{LockedHeapAllocator, TaskManager}, switch::__switch, task::{TaskContext, TaskSched, TaskStatus}, PROCESSOR_NUM, USER_VDSO_BASE
-};
+}};
 
 pub struct VdsoData {
     pub task_manager: TaskManager,
@@ -32,14 +32,26 @@ pub fn user_schedule() {
                 &mut task_inner.task_cx as *mut TaskContext
             });
             let task_manager = &mut vdso_data.task_manager;
-            if let Some(next_task) = task_manager.fetch() {
-                let next_task_cx = task.inner_exclusive_session(|task_inner| {
-                    task_inner.task_status = TaskStatus::Running;
-                    &task_inner.task_cx as *const TaskContext
-                });
-                vdso_data.current_task[i] = Some(next_task);
-                unsafe {
-                    __switch(task_cx, next_task_cx);
+            if let Some(next_task_ref) = task_manager.peek() {
+                if next_task_ref.id.0 == task.id.0 {
+                    // 同一地址空间，由用户进行调度
+                    if next_task_ref.id.1 == task.id.1 {
+                        continue; // 同一任务，不需要切换
+                    }
+                    // 取出下一个任务
+                    let next_task = task_manager.fetch().unwrap();
+                    let next_task_cx = task.inner_exclusive_session(|task_inner| {
+                        task_inner.task_status = TaskStatus::Running;
+                        &task_inner.task_cx as *const TaskContext
+                    });
+                    vdso_data.current_task[i] = Some(next_task);
+                    task_manager.add(task);
+                    unsafe {
+                        __switch(task_cx, next_task_cx);
+                    }
+                } else {
+                    // 调用系统调用进行调度
+                    sys_yield();
                 }
             } else {
                 panic!("No next task in user space!");
