@@ -30,5 +30,6 @@ __switch:
     .endr
     # restore kernel stack of next task
     ld sp, 8(a1)
+    call user_schedule_unlock
     ret
 

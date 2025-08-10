@@ -1,4 +1,4 @@
-use core::{alloc::Layout, ptr::NonNull};
+use core::{alloc::Layout, ptr::NonNull, sync::atomic::AtomicBool};
 
 use buddy_system_allocator::LockedHeap;
 use lazy_static::lazy_static;
@@ -9,6 +9,7 @@ use alloc::{alloc::{AllocError, Allocator}, sync::Arc, vec::Vec};
 pub struct VdsoData {
     pub task_manager: TaskManager,
     pub current_task: [Option<Arc<TaskSched, LockedHeapAllocator>>; PROCESSOR_NUM],
+    pub block_sched: AtomicBool, // 阻塞内核抢占
 }
 
 impl VdsoData {
@@ -16,6 +17,7 @@ impl VdsoData {
         Self {
             task_manager: TaskManager::new(),
             current_task: [None; PROCESSOR_NUM],
+            block_sched: AtomicBool::new(false), // 默认不阻塞内核抢占
         }
     }
 }
