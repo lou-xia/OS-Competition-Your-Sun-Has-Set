@@ -76,6 +76,7 @@ impl TaskControlBlock {
     }
 }
 
+#[derive(Debug)]
 #[derive(Copy, Clone, PartialEq)]
 pub enum TaskStatus {
     Ready,

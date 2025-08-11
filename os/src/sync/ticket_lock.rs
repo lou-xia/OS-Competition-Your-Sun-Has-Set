@@ -1,5 +1,7 @@
+use core::fmt::Debug;
 use core::sync::atomic::{AtomicUsize, Ordering};
 use core::cell::UnsafeCell;
+
 
 pub struct TicketLock<T> {
     serve: AtomicUsize,    // 当前服务票号
@@ -7,7 +9,7 @@ pub struct TicketLock<T> {
     data: UnsafeCell<T>,   // 被保护的数据
 }
 
-unsafe impl<T: Send> Sync for TicketLock<T> {}
+unsafe impl<T: Sync> Sync for TicketLock<T> {}
 
 impl<T> TicketLock<T> {
     pub const fn new(data: T) -> Self {
@@ -26,8 +28,23 @@ impl<T> TicketLock<T> {
         while self.serve.load(Ordering::Acquire) != ticket {
             core::hint::spin_loop(); // 自旋等待
         }
-        
         TicketGuard { lock: self }
+    }
+
+    pub fn locked(&self) -> bool {
+        self.serve.load(Ordering::Relaxed) != self.next.load(Ordering::Relaxed)
+    }
+}
+
+impl<T: Debug> Debug for TicketLock<T> {
+    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+        f.debug_struct("TicketLock")
+            .field("serve", &self.serve.load(Ordering::Relaxed))
+            .field("next", &self.next.load(Ordering::Relaxed))
+            .field("inner", unsafe {
+                &*self.data.get()
+            })
+            .finish()
     }
 }
 

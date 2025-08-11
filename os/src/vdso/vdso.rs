@@ -1,24 +1,42 @@
-use core::{alloc::Layout, ptr::NonNull, sync::atomic::AtomicBool};
+use core::{alloc::Layout, ptr::NonNull, sync::atomic::{self, AtomicBool}};
 
 use buddy_system_allocator::LockedHeap;
 use lazy_static::lazy_static;
 use log::info;
-use crate::{config::{KERNEL_VDSO_BASE, PAGE_SIZE, PROCESSOR_NUM, VDSO_DATA_PAGES, VDSO_HEAP_PAGES, VDSO_PAGES}, mm::{frame_alloc_more, FrameTracker}, sync::UPIntrFreeCell, task::{TaskManager, TaskSched}};
+use spin::{mutex::Mutex, MutexGuard};
+use crate::{config::{KERNEL_VDSO_BASE, PAGE_SIZE, PROCESSOR_NUM, VDSO_DATA_PAGES, VDSO_HEAP_PAGES, VDSO_PAGES}, mm::{frame_alloc_more, FrameTracker}, sync::{TicketGuard, TicketLock}, task::{TaskManager, TaskSched}};
 use alloc::{alloc::{AllocError, Allocator}, sync::Arc, vec::Vec};
 
+
+#[repr(C)]
 pub struct VdsoData {
+    pub block_sched: AtomicBool, // 阻塞内核抢占
+    pub inner: TicketLock<VdsoInner>,
+}
+
+pub struct VdsoInner {
     pub task_manager: TaskManager,
     pub current_task: [Option<Arc<TaskSched, LockedHeapAllocator>>; PROCESSOR_NUM],
-    pub block_sched: AtomicBool, // 阻塞内核抢占
 }
 
 impl VdsoData {
     pub fn new() -> Self {
         Self {
-            task_manager: TaskManager::new(),
-            current_task: [None; PROCESSOR_NUM],
-            block_sched: AtomicBool::new(false), // 默认不阻塞内核抢占
+            block_sched: AtomicBool::new(false),
+            inner: TicketLock::new(VdsoInner {
+                task_manager: TaskManager::new(),
+                current_task: [None; PROCESSOR_NUM],
+            }),
         }
+    }
+
+    pub fn locked(&self) -> bool {
+        self.block_sched.load(atomic::Ordering::Relaxed)
+    }
+
+    pub fn inner_exclusive_access(&self) -> TicketGuard<'_, VdsoInner> {
+        // println!("Acquiring VDSO lock...");
+        self.inner.lock()
     }
 }
 
@@ -32,27 +50,18 @@ lazy_static! {
         ppn.reverse();
         Arc::new(ppn)
     };
-    pub static ref VDSO_DATA: Arc<UPIntrFreeCell<&'static mut VdsoData>> = {
+    pub static ref VDSO_DATA: &'static VdsoData = {
         // 取第一页
         let va: usize = KERNEL_VDSO_BASE;
         // println!("VDSO data at PA: {:#x}", pa.0);
 
-        // vdso转换成byte slice
-        let mut data = VdsoData::new();
-        let init_data = unsafe {
-            core::slice::from_raw_parts_mut(&mut data as *mut VdsoData as *mut u8, core::mem::size_of::<VdsoData>())
-        };
-
-        // 将数据写入第一页
+        let data = VdsoData::new();
         unsafe {
-            core::ptr::copy_nonoverlapping(init_data.as_ptr(), va as *mut u8, init_data.len());
+            core::ptr::write(va as *mut VdsoData, data);
         }
 
-        core::mem::forget(data); // 防止数据被释放
-
-        println!("[kernel] VDSO data initialized");
-        // &mut *data
-        unsafe {Arc::new(UPIntrFreeCell::new(&mut *(va as *mut VdsoData)))}
+        info!("[kernel] VDSO data initialized");
+        unsafe {core::mem::transmute::<*const VdsoData, &'static VdsoData>(va as *const VdsoData)}
     };
     
 }

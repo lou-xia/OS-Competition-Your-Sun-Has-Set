@@ -114,7 +114,7 @@ impl MemorySet {
                 VirtAddr::from(USER_VDSO_BASE + i * PAGE_SIZE).into(),
                 VDSO_PAGE[i].ppn,
                 // TODO：看一下是否真的需要这么高的权限
-                PTEFlags::R | PTEFlags::W | PTEFlags::X | PTEFlags::U,
+                PTEFlags::R | PTEFlags::W | PTEFlags::U,
             );
         }
     }

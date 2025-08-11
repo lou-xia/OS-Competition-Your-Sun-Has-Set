@@ -24,28 +24,19 @@ impl Processor {
     fn get_idle_task_cx_ptr(&mut self) -> *mut TaskContext {
         &mut self.idle_task_cx as *mut _
     }
-    // fn check_current(&mut self) {
-    //     let task = VDSO_DATA.exclusive_access().current_task[0].clone();
-    //     if task == self.current {
-    //         return;
-    //     }
-    //     self.current = task;
-    // }
-    // pub fn take_current(&mut self) -> Option<Arc<TaskSched, LockedHeapAllocator>> {
-    //     self.check_current();
-    //     self.current.take()
-    // }
-    // pub fn current(&mut self) -> Option<Arc<TaskSched, LockedHeapAllocator>> {
-    //     self.check_current();
-    //     self.current.as_ref().map(Arc::clone)
-    // }
 
     pub fn take_current(&mut self) -> Option<Arc<TaskSched, LockedHeapAllocator>> {
-        VDSO_DATA.exclusive_access().current_task[0].take()
+        let mut inner = VDSO_DATA.inner_exclusive_access();
+        let result = inner.current_task[0].take();
+        drop(inner);
+        result
     }
 
-    pub fn current(&mut self) -> Option<Arc<TaskSched, LockedHeapAllocator>> {
-        VDSO_DATA.exclusive_access().current_task[0].as_ref().map(Arc::clone)
+    pub fn current(&self) -> Option<Arc<TaskSched, LockedHeapAllocator>> {
+        let inner = VDSO_DATA.inner_exclusive_access();
+        let task = inner.current_task[0].as_ref().cloned();
+        drop(inner);
+        task
     }
 }
 
@@ -64,10 +55,13 @@ pub fn run_tasks() {
                 task_inner.task_status = TaskStatus::Running;
                 &task_inner.task_cx as *const TaskContext
             });
-            // println!("VDSO_DATA: {:p}, current_task: {:p}", &VDSO_DATA, &VDSO_DATA.exclusive_access().current_task[0]);
-            VDSO_DATA.exclusive_access().current_task[0] = Some(task.clone());
-            // 理论上下面这行可以删掉了，并且测试后能正常运行，保险起见先留着
-            // processor.current = Some(task);
+            {
+                println!("acquired VDSO lock at run_tasks");
+                let mut vdso_inner = VDSO_DATA.inner_exclusive_access();
+                vdso_inner.current_task[0] = Some(task.clone());
+                drop(vdso_inner); // 显式释放VDSO锁
+                println!("released VDSO lock at run_tasks");
+            }
             // release processor manually
             drop(processor);
             unsafe {
@@ -135,7 +129,6 @@ pub fn current_kstack_top() -> usize {
         unsafe { asm!("la {},boot_stack_top",out(reg) boot_stack_top) };
         boot_stack_top
     }
-    // current_task().unwrap().kstack.get_top()
 }
 
 pub fn schedule(switched_task_cx_ptr: *mut TaskContext) {

@@ -1,12 +1,13 @@
 use super::ticket_lock::{TicketGuard, TicketLock};
 
 
-
+#[derive(Debug)]
 pub struct TaskSched {
     pub id: (usize, usize), // 任务ID(同时是线程id)
     pub inner: TicketLock<TaskSchedInner>,
 }
 
+#[derive(Debug)]
 pub struct TaskSchedInner {
     pub prio: usize, // 静态优先级
     pub aging: usize, // 老化机制, 用于防止饥饿
@@ -15,33 +16,6 @@ pub struct TaskSchedInner {
 }
 
 impl TaskSched {
-    pub fn new(pid: usize, tid: usize, prio: usize, task_cx: TaskContext, task_status: TaskStatus) -> Self {
-        Self {
-            id: (pid, tid),
-            inner: 
-                TicketLock::new(TaskSchedInner {
-                    prio,
-                    aging: 0,
-                    task_cx,
-                    task_status,
-                })
-            ,
-        }
-    }
-
-    pub fn empty() -> Self {
-        Self {
-            id: (0, 0),
-            inner: 
-                TicketLock::new(TaskSchedInner {
-                    prio: 0,
-                    aging: 0,
-                    task_cx: TaskContext::zero_init(),
-                    task_status: TaskStatus::Ready,
-                })
-            ,
-        }
-    }
 
     pub fn inner_exclusive_access(&self) -> TicketGuard<'_, TaskSchedInner> {
         // println!(1);
@@ -113,7 +87,7 @@ impl TaskContext {
     }
 }
 
-#[derive(Copy, Clone, PartialEq)]
+#[derive(Copy, Clone, PartialEq, Debug)]
 pub enum TaskStatus {
     Ready,
     Running,

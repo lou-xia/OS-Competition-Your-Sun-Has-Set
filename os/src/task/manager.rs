@@ -3,6 +3,7 @@ use crate::{sync::{TicketGuard, TicketLock, UPIntrFreeCell}, vdso::vdso::{Locked
 use alloc::{collections::btree_map::BTreeMap, sync::Arc};
 use lazy_static::*;
 
+#[derive(Debug)]
 pub struct TaskManager {
     // ready_queue: VecDeque<Task>,
     // ready_queue: BTreeSet<Arc<TaskSched>>,
@@ -11,16 +12,13 @@ pub struct TaskManager {
     empty: Arc<TaskSched, LockedHeapAllocator>, // 占位用
 }
 
-// const INITIAL_TIME_SLICES: [usize; MAX_PRIO + 1] = [
-//     0, 1, 1, 2, 2, 3, 3, 4, 4, 5, 1, 6, 6, 5, 5, 4, 4, 3, 3, 2, 2
-// ];
-
-
+#[derive(Debug)]
 pub struct TaskSched {
     pub id: (usize, usize), // 任务ID(同时是线程id)
     pub inner: TicketLock<TaskSchedInner>,
 }
 
+#[derive(Debug)]
 pub struct TaskSchedInner {
     pub prio: usize, // 静态优先级
     pub aging: usize, // 老化机制, 用于防止饥饿
@@ -128,7 +126,8 @@ impl TaskManager {
     // 关键: 不能使用core, 只能使用builtin
     pub fn add(&mut self, task: Arc<TaskSched, LockedHeapAllocator>) {
         if self.size >= self.ready_heap.len() {
-            panic!("TaskManager is full, cannot add more tasks");
+            // 不panic，直接返回，由调用者处理
+            return;
         }
         // 插入任务到堆中
         self.ready_heap[self.size] = task;
@@ -198,7 +197,14 @@ lazy_static! {
 }
 
 pub fn add_task(task: Arc<TaskSched, LockedHeapAllocator>) {
-    VDSO_DATA.exclusive_access().task_manager.add(task);
+    println!("acquiring VDSO lock to add task");
+    let mut vdso_inner = VDSO_DATA.inner_exclusive_access();
+    if vdso_inner.task_manager.size >= vdso_inner.task_manager.ready_heap.len() {
+        drop(vdso_inner); // 释放锁再panic
+        panic!("TaskManager is full, cannot add more tasks");
+    }
+    vdso_inner.task_manager.add(task);
+    drop(vdso_inner);
 }
 
 pub fn wakeup_task(task: Arc<TaskControlBlock>) {
@@ -209,7 +215,11 @@ pub fn wakeup_task(task: Arc<TaskControlBlock>) {
 }
 
 pub fn fetch_task() -> Option<Arc<TaskSched, LockedHeapAllocator>> {
-    VDSO_DATA.exclusive_access().task_manager.fetch()
+    println!("acquiring VDSO lock to fetch task");
+    let mut vdso_inner = VDSO_DATA.inner_exclusive_access();
+    let result = vdso_inner.task_manager.fetch();
+    drop(vdso_inner);
+    result
 }
 
 pub fn pid2process(pid: usize) -> Option<Arc<ProcessControlBlock>> {

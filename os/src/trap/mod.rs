@@ -8,7 +8,6 @@ use crate::task::{
 use crate::timer::{check_timer, set_next_trigger};
 use crate::vdso::vdso::VDSO_DATA;
 use core::arch::{asm, global_asm};
-use core::sync::atomic;
 use riscv::register::{
     mtvec::TrapMode,
     scause::{self, Exception, Interrupt, Trap},
@@ -103,9 +102,7 @@ pub fn trap_handler() -> ! {
         }
         Trap::Interrupt(Interrupt::SupervisorTimer) => {
             set_next_trigger();
-            if VDSO_DATA.exclusive_access().block_sched.load(atomic::Ordering::SeqCst) {
-                // 阻塞内核抢占
-            } else {
+            if !VDSO_DATA.locked() {
                 check_timer();
                 if current_task().unwrap().sched.id.0 != 0 && current_task().unwrap().sched.id.0 != 1 {
                     println!("[kernel]time interrupt {}-{}", current_task().unwrap().sched.id.0, current_task().unwrap().sched.id.1);

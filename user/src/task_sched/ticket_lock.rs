@@ -1,3 +1,4 @@
+use core::fmt::Debug;
 use core::sync::atomic::{AtomicUsize, Ordering};
 use core::cell::UnsafeCell;
 
@@ -7,7 +8,7 @@ pub struct TicketLock<T> {
     data: UnsafeCell<T>,   // 被保护的数据
 }
 
-unsafe impl<T: Send> Sync for TicketLock<T> {}
+unsafe impl<T: Sync> Sync for TicketLock<T> {}
 
 impl<T> TicketLock<T> {
     pub const fn new(data: T) -> Self {
@@ -19,15 +20,47 @@ impl<T> TicketLock<T> {
     }
 
     pub fn lock(&self) -> TicketGuard<'_, T> {
+        println!("About to fetch ticket...");
         // 获取票号（原子递增）
         let ticket = self.next.fetch_add(1, Ordering::Relaxed);
+        println!("Got ticket: {}", ticket);
         
         // 等待直到轮到当前票号
-        while self.serve.load(Ordering::Acquire) != ticket {
+        let mut serve_val = self.serve.load(Ordering::Acquire);
+        println!("Current serve: {}, my ticket: {}", serve_val, ticket);
+        while serve_val != ticket {
             core::hint::spin_loop(); // 自旋等待
+            serve_val = self.serve.load(Ordering::Acquire);
         }
-        
+        println!("Lock acquired for ticket: {}", ticket);
         TicketGuard { lock: self }
+    }
+
+    pub unsafe fn force_unlock(&self) {
+        // 服务下一个票号
+        self.serve.fetch_add(1, Ordering::Release);
+    }
+
+    pub fn locked(&self) -> bool {
+        self.serve.load(Ordering::Relaxed) != self.next.load(Ordering::Relaxed)
+    }
+
+    pub fn get_serve(&self) -> usize {
+        self.serve.load(Ordering::SeqCst)
+    }
+
+    pub fn get_next(&self) -> usize {
+        self.next.load(Ordering::SeqCst)
+    }
+}
+
+impl<T: Debug> Debug for TicketLock<T> {
+    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+        f.debug_struct("TicketLock")
+            .field("serve", &self.serve.load(Ordering::Relaxed))
+            .field("next", &self.next.load(Ordering::Relaxed))
+            .field("inner", unsafe {&*self.data.get()})
+            .finish()
     }
 }
 

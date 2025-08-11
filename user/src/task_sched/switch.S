@@ -30,6 +30,6 @@ __switch:
     .endr
     # restore user stack of next task
     ld sp, 120(a1)
-    call user_schedule_unlock
+    # call user_schedule_unlock
     ret
 

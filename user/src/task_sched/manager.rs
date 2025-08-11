@@ -5,6 +5,7 @@ use buddy_system_allocator::LockedHeap;
 
 use crate::task_sched::task::TaskSched;
 
+#[derive(Debug)]
 pub struct TaskManager {
     pub ready_heap: [Arc<TaskSched, LockedHeapAllocator>; 128], // 使用数组代替VecDeque, 目前最大128
     size: usize, // 当前队列大小

@@ -11,6 +11,7 @@ mod task;
 use self::id::TaskUserRes;
 use crate::fs::{OpenFlags, open_file};
 use crate::sbi::shutdown;
+use crate::vdso::vdso::VDSO_DATA;
 use alloc::{sync::Arc, vec::Vec};
 use lazy_static::*;
 use manager::fetch_task;
@@ -38,6 +39,15 @@ pub fn suspend_current_and_run_next() {
     task_inner.task_status = TaskStatus::Ready;
     drop(task_inner);
     // ---- release current TCB
+
+    // clear current task from VDSO
+    {
+        println!("clearing current task from VDSO in suspend");
+        let mut vdso_inner = VDSO_DATA.inner_exclusive_access();
+        vdso_inner.current_task[0] = None;
+        drop(vdso_inner);
+        println!("cleared current task from VDSO in suspend");
+    }
 
     // push back to ready queue.
     add_task(task.sched.clone());
