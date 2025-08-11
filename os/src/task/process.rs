@@ -147,7 +147,6 @@ impl ProcessControlBlock {
         task_inner.res.as_mut().unwrap().ustack_base = ustack_base;
         task_inner.res.as_mut().unwrap().alloc_user_res();
         task_inner.trap_cx_ppn = task_inner.res.as_mut().unwrap().trap_cx_ppn();
-        task.sched.inner_exclusive_access().task_cx.sepc = task_inner.get_trap_cx().sepc;
         // push arguments on user stack
         let mut user_sp = task_inner.res.as_mut().unwrap().ustack_top();
         user_sp -= (args.len() + 1) * core::mem::size_of::<usize>();
@@ -184,6 +183,8 @@ impl ProcessControlBlock {
         trap_cx.x[10] = args.len();
         trap_cx.x[11] = argv_base;
         *task_inner.get_trap_cx() = trap_cx;
+        task.sched.inner_exclusive_access().task_cx.sepc = entry_point;
+        println!("[PCB exec2] tid: {}-{}, entry: {:#x}", task.sched.id.0, task.sched.id.1, entry_point);
     }
 
     /// Only support processes with a single thread.
@@ -249,6 +250,11 @@ impl ProcessControlBlock {
         let trap_cx = task_inner.get_trap_cx();
         trap_cx.kernel_sp = task.kstack.get_top();
         task.sched.inner_exclusive_access().task_cx.sepc = trap_cx.sepc;
+
+
+        println!("[PCB fork] tid: {}-{}, entry: {:#x}", task.sched.id.0, task.sched.id.1, trap_cx.sepc);
+        
+        
         drop(task_inner);
         insert_into_pid2process(child.getpid(), Arc::clone(&child));
         // add this thread to scheduler

@@ -68,7 +68,10 @@ pub fn trap_handler() -> ! {
             // jump to next instruction anyway
             let mut cx = current_trap_cx();
             cx.sepc += 4;
-
+            current_task().unwrap().sched.inner_exclusive_access().task_cx.sepc = cx.sepc;
+            // if current_task().unwrap().sched.id.0 != 0 && current_task().unwrap().sched.id.0 != 1 {
+            //     println!("[kernel syscall1] tid: {}-{}, entry: {:#x}", current_task().unwrap().sched.id.0, current_task().unwrap().sched.id.1, cx.sepc);
+            // }
             enable_supervisor_interrupt();
 
             // get system call return value
@@ -77,6 +80,9 @@ pub fn trap_handler() -> ! {
             cx = current_trap_cx();
             cx.x[10] = result as usize;
             current_task().unwrap().sched.inner_exclusive_access().task_cx.sepc = cx.sepc;
+            // if current_task().unwrap().sched.id.0 != 0 && current_task().unwrap().sched.id.0 != 1 {
+            //     println!("[kernel syscall2] tid: {}-{}, entry: {:#x}", current_task().unwrap().sched.id.0, current_task().unwrap().sched.id.1, cx.sepc);
+            // }
         }
         Trap::Exception(Exception::StoreFault)
         | Trap::Exception(Exception::StorePageFault)
@@ -107,11 +113,15 @@ pub fn trap_handler() -> ! {
                 // 阻塞内核抢占
             } else {
                 check_timer();
-                if current_task().unwrap().sched.id.0 != 0 && current_task().unwrap().sched.id.0 != 1 {
-                    println!("[kernel]time interrupt {}-{}", current_task().unwrap().sched.id.0, current_task().unwrap().sched.id.1);
+                if current_task().unwrap().sched.id.0 != 0 { //&& current_task().unwrap().sched.id.0 != 1 {
+                    println!("[kernel time interrupt1] tid: {}-{}, entry: {:#x}", current_task().unwrap().sched.id.0, current_task().unwrap().sched.id.1, current_trap_cx().sepc);
                 }
                 current_task().unwrap().sched.inner_exclusive_access().task_cx.sepc = current_trap_cx().sepc;
                 suspend_current_and_run_next();
+                if current_task().unwrap().sched.id.0 != 0 { //&& current_task().unwrap().sched.id.0 != 1 {
+                    println!("[kernel time interrupt2] tid: {}-{}, entry: {:#x}", current_task().unwrap().sched.id.0, current_task().unwrap().sched.id.1, current_trap_cx().sepc);
+                }
+                current_task().unwrap().sched.inner_exclusive_access().task_cx.sepc = current_trap_cx().sepc;
             }
         }
         Trap::Interrupt(Interrupt::SupervisorExternal) => {

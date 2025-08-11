@@ -1,9 +1,9 @@
-use core::{panic, sync::atomic::{self, AtomicBool}};
+use core::{arch::asm, panic, sync::atomic::{self, AtomicBool}};
 
 use alloc::sync::Arc;
 
 use crate::{syscall::sys_yield, task_sched::{
-    manager::{LockedHeapAllocator, TaskManager}, switch::__switch, task::{TaskContext, TaskSched, TaskStatus}, PROCESSOR_NUM, USER_VDSO_BASE
+    manager::{LockedHeapAllocator, TaskManager}, switch::__switch_user, task::{TaskContext, TaskSched, TaskStatus}, PROCESSOR_NUM, USER_VDSO_BASE
 }};
 
 pub struct VdsoData {
@@ -45,7 +45,7 @@ pub fn user_schedule() {
                     // 添加任务到任务管理器
                     task_manager.add(task);
                     unsafe {
-                        __switch(task_cx, next_task_cx);
+                        __switch_user(task_cx, next_task_cx);
                     }
                 } else {
                     // 调用系统调用进行调度
@@ -71,4 +71,13 @@ pub extern "C" fn user_schedule_unlock() {
             &mut *(USER_VDSO_BASE as *mut VdsoData)
         };
     vdso_data.block_sched.store(false, atomic::Ordering::SeqCst); // 恢复内核抢占
+    unsafe extern "C" {
+        unsafe fn __return_place();
+    }
+    unsafe {
+        asm!(
+            "la t0, __return_place",
+            "jr t0",
+        )
+    }
 }
