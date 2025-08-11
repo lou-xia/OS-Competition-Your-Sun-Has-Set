@@ -3,9 +3,7 @@ mod context;
 use crate::config::TRAMPOLINE;
 use crate::syscall::syscall;
 use crate::task::{
-    SignalFlags, check_signals_of_current, current_add_signal, current_trap_cx,
-    current_trap_cx_user_va, current_user_token, exit_current_and_run_next,
-    suspend_current_and_run_next,
+    check_signals_of_current, current_add_signal, current_task, current_trap_cx, current_trap_cx_user_va, current_user_token, exit_current_and_run_next, suspend_current_and_run_next, SignalFlags
 };
 use crate::timer::{check_timer, set_next_trigger};
 use crate::vdso::vdso::VDSO_DATA;
@@ -78,6 +76,7 @@ pub fn trap_handler() -> ! {
             // cx is changed during sys_exec, so we have to call it again
             cx = current_trap_cx();
             cx.x[10] = result as usize;
+            current_task().unwrap().sched.inner_exclusive_access().task_cx.sepc = cx.sepc;
         }
         Trap::Exception(Exception::StoreFault)
         | Trap::Exception(Exception::StorePageFault)
@@ -87,7 +86,7 @@ pub fn trap_handler() -> ! {
         | Trap::Exception(Exception::LoadPageFault) => {
             // /*
             println!(
-                "[kernel] {:?} in application, bad addr = {:#x}, bad instruction = {:#x}, kernel killed it.",
+                "[kernel] {:?} in application, bad addr = {:#x?}, bad instruction = {:#x}, kernel killed it.",
                 scause.cause(),
                 stval,
                 current_trap_cx().sepc,
@@ -108,6 +107,10 @@ pub fn trap_handler() -> ! {
                 // 阻塞内核抢占
             } else {
                 check_timer();
+                if current_task().unwrap().sched.id.0 != 0 && current_task().unwrap().sched.id.0 != 1 {
+                    println!("[kernel]time interrupt {}-{}", current_task().unwrap().sched.id.0, current_task().unwrap().sched.id.1);
+                }
+                current_task().unwrap().sched.inner_exclusive_access().task_cx.sepc = current_trap_cx().sepc;
                 suspend_current_and_run_next();
             }
         }
@@ -144,7 +147,7 @@ pub fn trap_return() -> ! {
         unsafe fn __restore();
     }
     let restore_va = __restore as usize - __alltraps as usize + TRAMPOLINE;
-    //println!("before return");
+    // println!("before return");
     unsafe {
         asm!(
             "fence.i",

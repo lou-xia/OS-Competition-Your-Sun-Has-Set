@@ -107,6 +107,7 @@ impl ProcessControlBlock {
             Arc::clone(&process),
             ustack_base,
             true,
+            entry_point,
         ));
         // prepare trap_cx of main thread
         let task_inner = task.inner_exclusive_access();
@@ -146,6 +147,7 @@ impl ProcessControlBlock {
         task_inner.res.as_mut().unwrap().ustack_base = ustack_base;
         task_inner.res.as_mut().unwrap().alloc_user_res();
         task_inner.trap_cx_ppn = task_inner.res.as_mut().unwrap().trap_cx_ppn();
+        task.sched.inner_exclusive_access().task_cx.sepc = task_inner.get_trap_cx().sepc;
         // push arguments on user stack
         let mut user_sp = task_inner.res.as_mut().unwrap().ustack_top();
         user_sp -= (args.len() + 1) * core::mem::size_of::<usize>();
@@ -236,6 +238,7 @@ impl ProcessControlBlock {
             // here we do not allocate trap_cx or ustack again
             // but mention that we allocate a new kstack here
             false,
+            0,
         ));
         // attach task to child process
         let mut child_inner = child.inner_exclusive_access();
@@ -245,6 +248,7 @@ impl ProcessControlBlock {
         let task_inner = task.inner_exclusive_access();
         let trap_cx = task_inner.get_trap_cx();
         trap_cx.kernel_sp = task.kstack.get_top();
+        task.sched.inner_exclusive_access().task_cx.sepc = trap_cx.sepc;
         drop(task_inner);
         insert_into_pid2process(child.getpid(), Arc::clone(&child));
         // add this thread to scheduler

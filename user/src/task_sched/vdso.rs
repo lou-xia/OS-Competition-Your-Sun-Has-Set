@@ -19,7 +19,6 @@ pub fn user_schedule() {
         };
 
     vdso_data.block_sched.store(true, atomic::Ordering::SeqCst); // 阻塞内核抢占
-    
     // 为什么要更改所有逻辑处理器的任务?难道不是谁yield，仅更改对应的逻辑处理器的任务吗?
     for i in 0..PROCESSOR_NUM {
         if vdso_data.current_task[i].is_none() {
@@ -41,6 +40,7 @@ pub fn user_schedule() {
                         task_inner.task_status = TaskStatus::Running;
                         &task_inner.task_cx as *const TaskContext
                     });
+                    unsafe {println!("\ncurrent: {}-{}, {:#x?}, next: {}-{}, {:#x?}", task.id.0, task.id.1, *task_cx, next_task.id.0, next_task.id.1, *next_task_cx);}
                     vdso_data.current_task[i] = Some(next_task);
                     // 添加任务到任务管理器
                     task_manager.add(task);
@@ -49,6 +49,7 @@ pub fn user_schedule() {
                     }
                 } else {
                     // 调用系统调用进行调度
+                    // println!("current: {}-{}", task.id.0, task.id.1);
                     drop(task);
                     vdso_data.block_sched.store(false, atomic::Ordering::SeqCst); // 恢复内核抢占
                     sys_yield();

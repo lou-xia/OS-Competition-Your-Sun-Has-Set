@@ -17,6 +17,7 @@ pub fn sys_thread_create(entry: usize, arg: usize) -> isize {
             .unwrap()
             .ustack_base,
         true,
+        entry,
     ));
     // add new task to scheduler
     add_task(new_task.sched.clone());
