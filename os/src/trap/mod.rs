@@ -1,7 +1,6 @@
 mod context;
 
-use crate::config::{PAGE_SIZE, TRAMPOLINE};
-use crate::mm::{translated_ref, translated_refmut};
+use crate::config::{TRAMPOLINE, VDSO_TRAP_CONTEXT_START};
 use crate::syscall::syscall;
 use crate::task::{
     check_signals_of_current, current_add_signal, current_trap_cx, current_trap_cx_user_va, current_user_token, exit_current_and_run_next, suspend_current_and_run_next, SignalFlags
@@ -14,9 +13,6 @@ use riscv::register::{
     scause::{self, Exception, Interrupt, Trap},
     sie, sscratch, sstatus, stval, stvec,
 };
-
-#[unsafe(no_mangle)]
-pub static TRAP_CONTEXT_PTR: usize = TRAMPOLINE - PAGE_SIZE; // 指向当前任务trap context的指针
 
 global_asm!(include_str!("trap.S"));
 
@@ -152,7 +148,9 @@ pub fn trap_return() -> ! {
     let trap_cx_user_va = current_trap_cx_user_va();
     let user_satp = current_user_token();
     // 更新TRAP_CONTEXT_PTR指向当前任务的trap context
-    // *translated_refmut(user_satp, TRAP_CONTEXT_PTR as *mut usize) = trap_cx_user_va;
+    unsafe {
+        (VDSO_TRAP_CONTEXT_START as *mut usize).write(trap_cx_user_va);
+    }
 
     // println!("[kernel] trap return");
 
@@ -164,7 +162,8 @@ pub fn trap_return() -> ! {
     // println!("before return");
     // println!("[kernel] trap return, trap_cx_va={:#x}", trap_cx_user_va);
     // println!("trap={:?}", translated_ref(user_satp, trap_cx_user_va as *const TrapContext));
-    println!("restore_va={:#x}", restore_va);
+    // println!("restore_va={:#x}", restore_va);
+    // println!("vdso_trap_context_start: {:#x}", VDSO_TRAP_CONTEXT_START);
     // println!("[kernel] task id: {}-{}", current_task().unwrap().sched.id.0, current_task().unwrap().sched.id.1);
     unsafe {
         asm!(

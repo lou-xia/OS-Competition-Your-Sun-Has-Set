@@ -3,10 +3,9 @@ use super::{PTEFlags, PageTable, PageTableEntry};
 use super::{PhysAddr, PhysPageNum, VirtAddr, VirtPageNum};
 use super::{StepByOne, VPNRange};
 use crate::config::{
-    KERNEL_VDSO_BASE, MEMORY_END, MMIO, PAGE_SIZE, TRAMPOLINE, USER_VDSO_BASE, VDSO_PAGES
+    KERNEL_VDSO_BASE, MEMORY_END, MMIO, PAGE_SIZE, TRAMPOLINE, USER_VDSO_BASE, VDSO_PAGES, VDSO_TRAP_CONTEXT_START_SPECIAL
 };
 use crate::sync::UPIntrFreeCell;
-use crate::trap::TRAP_CONTEXT_PTR;
 use crate::vdso::vdso::VDSO_PAGE;
 use alloc::collections::BTreeMap;
 use alloc::sync::Arc;
@@ -99,7 +98,7 @@ impl MemorySet {
             self.page_table.map(
                 VirtAddr::from(KERNEL_VDSO_BASE + i * PAGE_SIZE).into(),
                 VDSO_PAGE[i].ppn,
-                PTEFlags::R | PTEFlags::W | PTEFlags::X,
+                PTEFlags::R | PTEFlags::W,
             );
         }
         let vpn: VirtPageNum = VirtAddr::from(KERNEL_VDSO_BASE).into();
@@ -114,18 +113,14 @@ impl MemorySet {
             self.page_table.map(
                 VirtAddr::from(USER_VDSO_BASE + i * PAGE_SIZE).into(),
                 VDSO_PAGE[i].ppn,
-                // TODO：看一下是否真的需要这么高的权限
                 PTEFlags::R | PTEFlags::W | PTEFlags::U,
             );
         }
-    }
-    // 为用户地址空间内的指定地址(TRAP_CONTEXT_PTR)分配一个trap context指针
-    #[inline]
-    fn alloc_and_map_user_trap_context_ptr(&mut self) {
-        self.insert_framed_area(
-            VirtAddr::from(TRAP_CONTEXT_PTR),
-            VirtAddr::from(TRAMPOLINE),
-            MapPermission::R | MapPermission::W | MapPermission::U,
+        // 单独为Trap开的一个映射
+        self.page_table.map(
+            VirtAddr::from(VDSO_TRAP_CONTEXT_START_SPECIAL).into(),
+            VDSO_PAGE[VDSO_PAGES - 1].ppn,
+            PTEFlags::R | PTEFlags::W,
         );
     }
     /// Without kernel stacks.
@@ -213,7 +208,6 @@ impl MemorySet {
         // map trampoline
         memory_set.map_trampoline();
         memory_set.map_user_vdso();
-        memory_set.alloc_and_map_user_trap_context_ptr();
         // map program headers of elf, with U flag
         let elf = xmas_elf::ElfFile::new(elf_data).unwrap();
         let elf_header = elf.header;
