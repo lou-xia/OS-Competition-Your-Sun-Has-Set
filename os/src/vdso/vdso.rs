@@ -3,7 +3,8 @@ use core::{alloc::Layout, ptr::NonNull, sync::atomic::{self, AtomicBool}};
 use buddy_system_allocator::LockedHeap;
 use lazy_static::lazy_static;
 use log::info;
-use crate::{config::{KERNEL_VDSO_BASE, PAGE_SIZE, PROCESSOR_NUM, VDSO_DATA_PAGES, VDSO_HEAP_PAGES, VDSO_PAGES}, mm::{frame_alloc_more, FrameTracker}, sync::UPIntrFreeCell, task::{TaskManager, TaskSched}};
+use spin::{mutex::Mutex, MutexGuard};
+use crate::{config::{KERNEL_VDSO_BASE, PAGE_SIZE, PROCESSOR_NUM, VDSO_DATA_PAGES, VDSO_HEAP_PAGES, VDSO_PAGES}, mm::{frame_alloc_more, FrameTracker}, sync::{TicketGuard, TicketLock}, task::{TaskManager, TaskSched}};
 use alloc::{alloc::{AllocError, Allocator}, sync::Arc, vec::Vec};
 
 

@@ -1,4 +1,5 @@
-use core::{panic, sync::atomic::{self, AtomicBool}};
+use core::{arch::asm, sync::atomic::{self, AtomicBool}};
+use lazy_static::lazy_static;
 
 use alloc::sync::Arc;
 use lazy_static::lazy_static;
@@ -104,14 +105,7 @@ pub fn user_schedule() {
         } else {
             panic!("No current task in user space!");
         }
-    }
-}
 
-#[unsafe(no_mangle)]
-pub extern "C" fn user_schedule_unlock() {
-    let vdso_data = unsafe {
-            // 将 USER_VDSO_BASE 转换为 VdsoData 的可变借用
-            &mut *(USER_VDSO_BASE as *mut VdsoData)
-        };
-    vdso_data.block_sched.store(false, atomic::Ordering::SeqCst); // 恢复内核抢占
+        VDSO_DATA.unblock_sched(); // 解除阻塞
+    }
 }

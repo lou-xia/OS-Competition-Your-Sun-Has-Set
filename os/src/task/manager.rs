@@ -197,7 +197,14 @@ lazy_static! {
 }
 
 pub fn add_task(task: Arc<TaskSched, LockedHeapAllocator>) {
-    VDSO_DATA.exclusive_access().task_manager.add(task);
+    println!("acquiring VDSO lock to add task");
+    let mut vdso_inner = VDSO_DATA.inner_exclusive_access();
+    if vdso_inner.task_manager.size >= vdso_inner.task_manager.ready_heap.len() {
+        drop(vdso_inner); // 释放锁再panic
+        panic!("TaskManager is full, cannot add more tasks");
+    }
+    vdso_inner.task_manager.add(task);
+    drop(vdso_inner);
 }
 
 pub fn wakeup_task(task: Arc<TaskControlBlock>) {
@@ -208,7 +215,11 @@ pub fn wakeup_task(task: Arc<TaskControlBlock>) {
 }
 
 pub fn fetch_task() -> Option<Arc<TaskSched, LockedHeapAllocator>> {
-    VDSO_DATA.exclusive_access().task_manager.fetch()
+    println!("acquiring VDSO lock to fetch task");
+    let mut vdso_inner = VDSO_DATA.inner_exclusive_access();
+    let result = vdso_inner.task_manager.fetch();
+    drop(vdso_inner);
+    result
 }
 
 pub fn pid2process(pid: usize) -> Option<Arc<ProcessControlBlock>> {
