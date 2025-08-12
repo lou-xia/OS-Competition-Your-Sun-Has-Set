@@ -12,9 +12,9 @@
     .globl __restore_k
     .align 2
 __alltraps:
-    # li t0, 0xFFFFFFC000012000
-    # ld t0, 0(t0)
-    # csrw sscratch, t0
+    li t0, 0xFFFFFFC000012000
+    ld t0, 0(t0)
+    csrw sscratch, t0
     csrrw sp, sscratch, sp
     # now sp->*TrapContext in user space, sscratch->user stack
     # save other general purpose registers
