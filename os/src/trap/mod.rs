@@ -67,7 +67,7 @@ pub fn print() {
 
 #[unsafe(no_mangle)]
 pub fn trap_handler() -> ! {
-    println!("[kernel] trap handler called");
+    // println!("[kernel] trap handler called");
     set_kernel_trap_entry();
     let scause = scause::read();
     let stval = stval::read();
@@ -112,7 +112,7 @@ pub fn trap_handler() -> ! {
         }
         Trap::Interrupt(Interrupt::SupervisorTimer) => {
             set_next_trigger();
-            println!("timer interrupt");
+            // println!("timer interrupt");
             // 阻止内核抢占
             if !VDSO_DATA.exclusive_access().locked() {
                 check_timer();
@@ -152,7 +152,7 @@ pub fn trap_return() -> ! {
     let trap_cx_user_va = current_trap_cx_user_va();
     let user_satp = current_user_token();
     // 更新TRAP_CONTEXT_PTR指向当前任务的trap context
-    *translated_refmut(user_satp, TRAP_CONTEXT_PTR as *mut usize) = trap_cx_user_va;
+    // *translated_refmut(user_satp, TRAP_CONTEXT_PTR as *mut usize) = trap_cx_user_va;
 
     // println!("[kernel] trap return");
 
@@ -162,8 +162,8 @@ pub fn trap_return() -> ! {
     }
     let restore_va = __restore as usize - __alltraps as usize + TRAMPOLINE;
     // println!("before return");
-    println!("[kernel] trap return, trap_cx_va={:#x}", trap_cx_user_va);
-    println!("trap={:?}", translated_ref(user_satp, trap_cx_user_va as *const TrapContext));
+    // println!("[kernel] trap return, trap_cx_va={:#x}", trap_cx_user_va);
+    // println!("trap={:?}", translated_ref(user_satp, trap_cx_user_va as *const TrapContext));
     println!("restore_va={:#x}", restore_va);
     // println!("[kernel] task id: {}-{}", current_task().unwrap().sched.id.0, current_task().unwrap().sched.id.1);
     unsafe {

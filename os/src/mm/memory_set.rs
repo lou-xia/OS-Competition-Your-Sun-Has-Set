@@ -120,6 +120,7 @@ impl MemorySet {
         }
     }
     // 为用户地址空间内的指定地址(TRAP_CONTEXT_PTR)分配一个trap context指针
+    #[inline]
     fn alloc_and_map_user_trap_context_ptr(&mut self) {
         self.insert_framed_area(
             VirtAddr::from(TRAP_CONTEXT_PTR),
