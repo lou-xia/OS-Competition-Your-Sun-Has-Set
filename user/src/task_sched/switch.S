@@ -6,9 +6,10 @@
     ld s\n, (\n+2)*8(a1)
 .endm
     .section .text
-    .globl __switch
-__switch:
-    # __switch(
+    .globl __switch_user
+    .globl __return_place
+__switch_user:
+    # __switch_user(
     #     current_task_cx_ptr: *mut TaskContext,
     #     next_task_cx_ptr: *const TaskContext
     # )
@@ -30,6 +31,8 @@ __switch:
     .endr
     # restore user stack of next task
     ld sp, 120(a1)
-    # call user_schedule_unlock
-    ret
-
+    # 跳转，不使用call
+    la t0, user_schedule_unlock
+    jr t0
+__return_place:
+    jr ra

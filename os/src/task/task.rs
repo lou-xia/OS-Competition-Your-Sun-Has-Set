@@ -71,6 +71,7 @@ impl TaskControlBlock {
                 })
             },
         };
+        println!("TCB new: tid: {}-{}", r.sched.id.0, r.sched.id.1);
         r
     }
 }

@@ -6,11 +6,12 @@ extern crate user_lib;
 extern crate alloc;
 
 use alloc::vec;
-use user_lib::{exit, thread_create, waittid};
+use user_lib::{exit, thread_create, waittid, yield_};
 
 pub fn thread_a() -> ! {
     for _ in 0..1000 {
         print!("a");
+        yield_();
     }
     exit(1)
 }
@@ -18,6 +19,7 @@ pub fn thread_a() -> ! {
 pub fn thread_b() -> ! {
     for _ in 0..1000 {
         print!("b");
+        yield_();
     }
     exit(2)
 }
@@ -25,6 +27,7 @@ pub fn thread_b() -> ! {
 pub fn thread_c() -> ! {
     for _ in 0..1000 {
         print!("c");
+        yield_();
     }
     exit(3)
 }
