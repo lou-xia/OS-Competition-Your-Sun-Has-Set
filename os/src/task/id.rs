@@ -117,7 +117,6 @@ impl KernelStack {
 pub struct TaskUserRes {
     pub tid: usize,
     pub ustack_base: usize,
-    pub prio: usize,
     pub process: Weak<ProcessControlBlock>,
 }
 
@@ -139,7 +138,6 @@ impl TaskUserRes {
         let task_user_res = Self {
             tid,
             ustack_base,
-            prio: DEFAULT_PRIO,
             process: Arc::downgrade(&process),
         };
         if alloc_user_res {

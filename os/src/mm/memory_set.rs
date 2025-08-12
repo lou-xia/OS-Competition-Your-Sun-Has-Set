@@ -2,15 +2,17 @@ use super::{FrameTracker, frame_alloc};
 use super::{PTEFlags, PageTable, PageTableEntry};
 use super::{PhysAddr, PhysPageNum, VirtAddr, VirtPageNum};
 use super::{StepByOne, VPNRange};
-use crate::config::{KERNEL_VDSO_BASE, MEMORY_END, MMIO, PAGE_SIZE, TRAMPOLINE, USER_VDSO_BASE};
+use crate::config::{
+    KERNEL_VDSO_BASE, MEMORY_END, MMIO, PAGE_SIZE, TRAMPOLINE, USER_VDSO_BASE, VDSO_PAGES, VDSO_TRAP_CONTEXT_START_SPECIAL
+};
 use crate::sync::UPIntrFreeCell;
 use crate::vdso::vdso::VDSO_PAGE;
 use alloc::collections::BTreeMap;
 use alloc::sync::Arc;
 use alloc::vec::Vec;
-use log::info;
 use core::arch::asm;
 use lazy_static::*;
+use log::info;
 use riscv::register::satp;
 
 unsafe extern "C" {
@@ -92,21 +94,33 @@ impl MemorySet {
         );
     }
     fn map_kernel_vdso(&mut self) {
-        self.page_table.map(
-            VirtAddr::from(KERNEL_VDSO_BASE).into(),
-            VDSO_PAGE.ppn,
-            PTEFlags::R | PTEFlags::W | PTEFlags::X,
-        );
+        for i in 0..VDSO_PAGES {
+            self.page_table.map(
+                VirtAddr::from(KERNEL_VDSO_BASE + i * PAGE_SIZE).into(),
+                VDSO_PAGE[i].ppn,
+                PTEFlags::R | PTEFlags::W,
+            );
+        }
         let vpn: VirtPageNum = VirtAddr::from(KERNEL_VDSO_BASE).into();
-        let ppn = VDSO_PAGE.ppn;
-        info!("VDSO area: vpn: {:?}, ppn: {:?}", vpn, ppn);
+        let ppn = VDSO_PAGE[0].ppn;
+        info!(
+            "VDSO area: vpn: {:?}, ppn: {:?}, PageNum: {:?}",
+            vpn, ppn, VDSO_PAGES
+        );
     }
     fn map_user_vdso(&mut self) {
+        for i in 0..VDSO_PAGES {
+            self.page_table.map(
+                VirtAddr::from(USER_VDSO_BASE + i * PAGE_SIZE).into(),
+                VDSO_PAGE[i].ppn,
+                PTEFlags::R | PTEFlags::W | PTEFlags::U,
+            );
+        }
+        // 单独为Trap开的一个映射
         self.page_table.map(
-            VirtAddr::from(USER_VDSO_BASE).into(),
-            VDSO_PAGE.ppn,
-            // TODO：看一下是否真的需要这么高的权限
-            PTEFlags::R | PTEFlags::W | PTEFlags::X | PTEFlags::U,
+            VirtAddr::from(VDSO_TRAP_CONTEXT_START_SPECIAL).into(),
+            VDSO_PAGE[VDSO_PAGES - 1].ppn,
+            PTEFlags::R | PTEFlags::W,
         );
     }
     /// Without kernel stacks.
@@ -238,6 +252,7 @@ impl MemorySet {
         let mut memory_set = Self::new_bare();
         // map trampoline
         memory_set.map_trampoline();
+        memory_set.map_user_vdso();
         // copy data sections/trap_context/user_stack
         for area in user_space.areas.iter() {
             let new_area = MapArea::from_another(area);

@@ -1,10 +1,14 @@
+use crate::task_sched::vdso::user_schedule;
+
 use super::*;
 
 pub fn exit(exit_code: i32) -> ! {
     sys_exit(exit_code);
 }
 pub fn yield_() -> isize {
-    sys_yield()
+    // sys_yield()
+    user_schedule();
+    0
 }
 pub fn get_time() -> isize {
     sys_get_time()

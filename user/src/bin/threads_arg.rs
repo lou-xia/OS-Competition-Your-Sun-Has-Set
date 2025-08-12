@@ -6,7 +6,7 @@ extern crate user_lib;
 extern crate alloc;
 
 use alloc::vec::Vec;
-use user_lib::{exit, thread_create, waittid};
+use user_lib::{exit, thread_create, waittid, yield_};
 
 struct Argument {
     pub ch: char,
@@ -17,6 +17,7 @@ fn thread_print(arg: *const Argument) -> ! {
     let arg = unsafe { &*arg };
     for _ in 0..1000 {
         print!("{}", arg.ch);
+        yield_();
     }
     exit(arg.rc)
 }

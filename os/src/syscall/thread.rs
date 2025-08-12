@@ -17,9 +17,10 @@ pub fn sys_thread_create(entry: usize, arg: usize) -> isize {
             .unwrap()
             .ustack_base,
         true,
+        // entry,
     ));
     // add new task to scheduler
-    add_task(Arc::clone(&new_task));
+    add_task(new_task.sched.clone());
     let new_task_inner = new_task.inner_exclusive_access();
     let new_task_res = new_task_inner.res.as_ref().unwrap();
     let new_task_tid = new_task_res.tid;
@@ -86,16 +87,15 @@ pub fn sys_waittid(tid: usize) -> i32 {
 
 pub fn sys_thread_prio(prio: usize) -> isize {
     let task = current_task().unwrap();
-    let mut task_inner = task.inner_exclusive_access();
-    let res = task_inner.res.as_mut().unwrap();
+    let mut task_inner = task.sched.inner_exclusive_access();
     if prio > MAX_PRIO || prio < MIN_PRIO {
         println!(
             "[kernel] sys_thread_prio: invalid priority {} for thread {}",
-            prio, res.tid
+            prio, task.sched.id.1
         );
         -1
     } else {
-        res.prio = prio;
+        task_inner.prio = prio;
         0
     }
 }

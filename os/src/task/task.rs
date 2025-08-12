@@ -1,6 +1,8 @@
-use super::id::TaskUserRes;
+use super::id::{TaskUserRes, DEFAULT_PRIO};
+use super::manager::TaskSched;
 use super::{KernelStack, ProcessControlBlock, TaskContext, kstack_alloc};
 use crate::trap::TrapContext;
+use crate::vdso::vdso::{LockedHeapAllocator, VDSO_HEAP_ALLOCATOR};
 use crate::{
     mm::PhysPageNum,
     sync::{UPIntrFreeCell, UPIntrRefMut},
@@ -11,6 +13,7 @@ pub struct TaskControlBlock {
     // immutable
     pub process: Weak<ProcessControlBlock>,
     pub kstack: KernelStack,
+    pub sched: Arc<TaskSched, LockedHeapAllocator>,
     // mutable
     pub inner: UPIntrFreeCell<TaskControlBlockInner>,
 }
@@ -30,19 +33,12 @@ impl TaskControlBlock {
 pub struct TaskControlBlockInner {
     pub res: Option<TaskUserRes>,
     pub trap_cx_ppn: PhysPageNum,
-    pub task_cx: TaskContext,
-    pub task_status: TaskStatus,
     pub exit_code: Option<i32>,
 }
 
 impl TaskControlBlockInner {
     pub fn get_trap_cx(&self) -> &'static mut TrapContext {
         self.trap_cx_ppn.get_mut()
-    }
-
-    #[allow(unused)]
-    fn get_status(&self) -> TaskStatus {
-        self.task_status
     }
 }
 
@@ -56,22 +52,31 @@ impl TaskControlBlock {
         let trap_cx_ppn = res.trap_cx_ppn();
         let kstack = kstack_alloc();
         let kstack_top = kstack.get_top();
-        Self {
+        let sched = TaskSched::new(
+                    process.pid.0,
+                    res.tid,
+                    DEFAULT_PRIO,
+                    TaskContext::goto_trap_return(kstack_top),
+                    TaskStatus::Ready,
+                );
+        let r = Self {
             process: Arc::downgrade(&process),
             kstack,
+            sched: Arc::new_in(sched, *VDSO_HEAP_ALLOCATOR),
             inner: unsafe {
                 UPIntrFreeCell::new(TaskControlBlockInner {
                     res: Some(res),
                     trap_cx_ppn,
-                    task_cx: TaskContext::goto_trap_return(kstack_top),
-                    task_status: TaskStatus::Ready,
                     exit_code: None,
                 })
             },
-        }
+        };
+        println!("TCB new: tid: {}-{}", r.sched.id.0, r.sched.id.1);
+        r
     }
 }
 
+#[derive(Debug)]
 #[derive(Copy, Clone, PartialEq)]
 pub enum TaskStatus {
     Ready,

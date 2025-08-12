@@ -1,7 +1,6 @@
 use crate::sync::{Condvar, Mutex, MutexBlocking, MutexSpin, Semaphore};
 use crate::task::{block_current_and_run_next, current_process, current_task};
 use crate::timer::{add_timer, get_time_ms};
-use crate::vdso::vdso::VDSO_DATA;
 use alloc::sync::Arc;
 
 pub fn sys_sleep(ms: usize) -> isize {
@@ -9,8 +8,6 @@ pub fn sys_sleep(ms: usize) -> isize {
     let task = current_task().unwrap();
     add_timer(expire_ms, task);
     block_current_and_run_next();
-    // TODO：记得这里的测试
-    VDSO_DATA.exclusive_access().num = ms;
     0
 }
 
