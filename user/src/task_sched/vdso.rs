@@ -68,13 +68,11 @@ pub fn user_schedule() {
                     assert_ne!(next_task_ref.id.1, current_task.id.1, "Two tasks with same TID in user space!");
                     // 取出下一个任务
                     let next_task = task_manager.fetch().unwrap();
-                    let task_cx = current_task.inner_exclusive_session(|task_inner| {
+                    current_task.inner_exclusive_session(|task_inner| {
                         task_inner.task_status = TaskStatus::Ready;
-                        &mut task_inner.task_cx as *mut TaskContext
                     });
-                    let next_task_cx = next_task.inner_exclusive_session(|task_inner| {
+                    next_task.inner_exclusive_session(|task_inner| {
                         task_inner.task_status = TaskStatus::Running;
-                        &task_inner.task_cx as *const TaskContext
                     });
                     // unsafe {
                     //     println!("\ncurrent: {}-{}, {:#x?}, next: {}-{}, {:#x?}",
@@ -85,10 +83,13 @@ pub fn user_schedule() {
                     // 修改当前任务
                     vdso_inner.current_task[i].replace(next_task);
 
+                    // 获取2个TrapContext
+
+
                     drop(vdso_inner); // 释放锁
-                    unsafe {
-                        __switch(task_cx, next_task_cx);
-                    }
+                    // unsafe {
+                    //     __switch(task_cx, next_task_cx);
+                    // }
                     continue;
                 } else {
                     // 调用系统调用进行调度

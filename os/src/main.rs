@@ -75,11 +75,9 @@ pub fn rust_main() -> ! {
     board::device_init();
     fs::list_apps();
 
-    println!("KERN: init task manager");
-
     task::add_initproc();
 
-    println!("KERN: init done, start running tasks");
+    // info!("KERN: init done, start running tasks");
 
     *DEV_NON_BLOCKING_ACCESS.exclusive_access() = true;
     task::run_tasks();
