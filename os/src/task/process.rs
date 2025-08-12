@@ -182,7 +182,7 @@ impl ProcessControlBlock {
         trap_cx.x[10] = args.len();
         trap_cx.x[11] = argv_base;
         *task_inner.get_trap_cx() = trap_cx;
-        task.sched.inner_exclusive_access().task_cx.sepc = entry_point;
+        // task.sched.inner_exclusive_access().task_cx.sepc = entry_point;
         println!("[PCB exec2] tid: {}-{}, entry: {:#x}", task.sched.id.0, task.sched.id.1, entry_point);
     }
 

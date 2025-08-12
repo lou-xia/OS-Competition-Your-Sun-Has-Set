@@ -1,7 +1,6 @@
 mod context;
 
 use crate::config::{PAGE_SIZE, TRAMPOLINE};
-use crate::mm::{translated_ref, translated_refmut};
 use crate::syscall::syscall;
 use crate::task::{
     check_signals_of_current, current_add_signal, current_trap_cx, current_trap_cx_user_va, current_user_token, exit_current_and_run_next, suspend_current_and_run_next, SignalFlags
@@ -77,7 +76,7 @@ pub fn trap_handler() -> ! {
             // jump to next instruction anyway
             let mut cx = current_trap_cx();
             cx.sepc += 4;
-            current_task().unwrap().sched.inner_exclusive_access().task_cx.sepc = cx.sepc;
+            // current_task().unwrap().sched.inner_exclusive_access().task_cx.sepc = cx.sepc;
             // if current_task().unwrap().sched.id.0 != 0 && current_task().unwrap().sched.id.0 != 1 {
             //     println!("[kernel syscall1] tid: {}-{}, entry: {:#x}", current_task().unwrap().sched.id.0, current_task().unwrap().sched.id.1, cx.sepc);
             // }
@@ -124,10 +123,10 @@ pub fn trap_handler() -> ! {
                 // }
                 // current_task().unwrap().sched.inner_exclusive_access().task_cx.sepc = current_trap_cx().sepc;
                 suspend_current_and_run_next();
-                if current_task().unwrap().sched.id.0 != 0 { //&& current_task().unwrap().sched.id.0 != 1 {
-                    println!("[kernel time interrupt2] tid: {}-{}, entry: {:#x}", current_task().unwrap().sched.id.0, current_task().unwrap().sched.id.1, current_trap_cx().sepc);
-                }
-                current_task().unwrap().sched.inner_exclusive_access().task_cx.sepc = current_trap_cx().sepc;
+                // if current_task().unwrap().sched.id.0 != 0 { //&& current_task().unwrap().sched.id.0 != 1 {
+                //     println!("[kernel time interrupt2] tid: {}-{}, entry: {:#x}", current_task().unwrap().sched.id.0, current_task().unwrap().sched.id.1, current_trap_cx().sepc);
+                // }
+                // current_task().unwrap().sched.inner_exclusive_access().task_cx.sepc = current_trap_cx().sepc;
             }
         }
         Trap::Interrupt(Interrupt::SupervisorExternal) => {

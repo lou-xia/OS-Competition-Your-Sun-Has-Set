@@ -1,6 +1,7 @@
 use core::{panic, sync::atomic::{self, AtomicBool}};
 
 use alloc::sync::Arc;
+use lazy_static::lazy_static;
 use spin::Mutex;
 
 use crate::{syscall::sys_yield, task_sched::{

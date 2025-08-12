@@ -31,6 +31,7 @@ impl<T> TicketLock<T> {
         TicketGuard { lock: self }
     }
 
+    #[allow(unused)]
     pub fn locked(&self) -> bool {
         self.serve.load(Ordering::Relaxed) != self.next.load(Ordering::Relaxed)
     }
