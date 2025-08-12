@@ -26,10 +26,7 @@ impl Processor {
     }
 
     pub fn take_current(&mut self) -> Option<Arc<TaskSched, LockedHeapAllocator>> {
-        let mut inner = VDSO_DATA.inner_exclusive_access();
-        let result = inner.current_task[0].take();
-        drop(inner);
-        result
+        VDSO_DATA.exclusive_access().current_task[0].take()
     }
 
     pub fn current(&self) -> Option<Arc<TaskSched, LockedHeapAllocator>> {
