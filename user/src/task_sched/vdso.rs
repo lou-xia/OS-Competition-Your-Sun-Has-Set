@@ -1,11 +1,10 @@
-use core::sync::atomic::{self, AtomicBool};
-use lazy_static::lazy_static;
+use core::{panic, sync::atomic::{self, AtomicBool}};
 
 use alloc::sync::Arc;
 use spin::Mutex;
 
 use crate::{syscall::sys_yield, task_sched::{
-    manager::{LockedHeapAllocator, TaskManager}, switch::__switch, task::{TaskContext, TaskSched, TaskStatus}, PROCESSOR_NUM, USER_VDSO_BASE
+    manager::{LockedHeapAllocator, TaskManager}, switch::__switch_user, task::{TaskContext, TaskSched, TaskStatus}, PROCESSOR_NUM, USER_VDSO_BASE
 }};
 
 // #[repr(C)]
@@ -87,7 +86,7 @@ pub fn user_schedule() {
 
                     drop(vdso_inner); // 释放锁
                     unsafe {
-                        __switch(task_cx, next_task_cx);
+                        __switch_user(task_cx, next_task_cx);
                     }
                     continue;
                 } else {
@@ -103,7 +102,14 @@ pub fn user_schedule() {
         } else {
             panic!("No current task in user space!");
         }
-
-        vdso_inner.unblock_sched(); // 解除阻塞
     }
+}
+
+#[unsafe(no_mangle)]
+pub extern "C" fn user_schedule_unlock() {
+    let vdso_data = unsafe {
+            // 将 USER_VDSO_BASE 转换为 VdsoData 的可变借用
+            &mut *(USER_VDSO_BASE as *mut VdsoData)
+        };
+    vdso_data.block_sched.store(false, atomic::Ordering::SeqCst); // 恢复内核抢占
 }
