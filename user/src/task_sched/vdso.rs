@@ -5,7 +5,7 @@ use lazy_static::lazy_static;
 use spin::Mutex;
 
 use crate::{syscall::sys_yield, task_sched::{
-    manager::{LockedHeapAllocator, TaskManager}, task::{TaskSched, TaskStatus}, PROCESSOR_NUM, USER_VDSO_BASE
+    manager::{LockedHeapAllocator, TaskManager}, switch::__switch_user, task::{TaskContext, TaskSched, TaskStatus}, PROCESSOR_NUM, USER_VDSO_BASE
 }};
 
 // #[repr(C)]
