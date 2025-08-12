@@ -47,7 +47,6 @@ impl TaskControlBlock {
         process: Arc<ProcessControlBlock>,
         ustack_base: usize,
         alloc_user_res: bool,
-        entry: usize,
     ) -> Self {
         let res = TaskUserRes::new(Arc::clone(&process), ustack_base, alloc_user_res);
         let trap_cx_ppn = res.trap_cx_ppn();
@@ -57,7 +56,7 @@ impl TaskControlBlock {
                     process.pid.0,
                     res.tid,
                     DEFAULT_PRIO,
-                    TaskContext::goto_trap_return(kstack_top, res.ustack_top(), entry),
+                    TaskContext::goto_trap_return(kstack_top),
                     TaskStatus::Ready,
                 );
         let r = Self {

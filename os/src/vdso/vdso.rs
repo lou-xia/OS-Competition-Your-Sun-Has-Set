@@ -3,18 +3,24 @@ use core::{alloc::Layout, ptr::NonNull, sync::atomic::{self, AtomicBool}};
 use buddy_system_allocator::LockedHeap;
 use lazy_static::lazy_static;
 use log::info;
-use spin::{mutex::Mutex, MutexGuard};
-use crate::{config::{KERNEL_VDSO_BASE, PAGE_SIZE, PROCESSOR_NUM, VDSO_DATA_PAGES, VDSO_HEAP_PAGES, VDSO_PAGES}, mm::{frame_alloc_more, FrameTracker}, sync::{TicketGuard, TicketLock}, task::{TaskManager, TaskSched}};
+use crate::{config::{KERNEL_VDSO_BASE, PAGE_SIZE, PROCESSOR_NUM, VDSO_DATA_PAGES, VDSO_HEAP_PAGES, VDSO_PAGES}, mm::{frame_alloc_more, FrameTracker}, sync::UPIntrFreeCell, task::{TaskManager, TaskSched}};
 use alloc::{alloc::{AllocError, Allocator}, sync::Arc, vec::Vec};
 
 
-#[repr(C)]
+// #[repr(C)]
+// pub struct VdsoData {
+//     pub block_sched: AtomicBool, // 阻塞内核抢占
+//     pub inner: TicketLock<VdsoInner>,
+// }
+
+// pub struct VdsoInner {
+//     pub task_manager: TaskManager,
+//     pub current_task: [Option<Arc<TaskSched, LockedHeapAllocator>>; PROCESSOR_NUM],
+// }
+
+#[derive(Debug)]
 pub struct VdsoData {
     pub block_sched: AtomicBool, // 阻塞内核抢占
-    pub inner: TicketLock<VdsoInner>,
-}
-
-pub struct VdsoInner {
     pub task_manager: TaskManager,
     pub current_task: [Option<Arc<TaskSched, LockedHeapAllocator>>; PROCESSOR_NUM],
 }
@@ -23,22 +29,37 @@ impl VdsoData {
     pub fn new() -> Self {
         Self {
             block_sched: AtomicBool::new(false),
-            inner: TicketLock::new(VdsoInner {
-                task_manager: TaskManager::new(),
-                current_task: [None; PROCESSOR_NUM],
-            }),
+            task_manager: TaskManager::new(),
+            current_task: [None; PROCESSOR_NUM],
         }
     }
 
-    pub fn locked(&self) -> bool {
-        self.block_sched.load(atomic::Ordering::Relaxed)
-    }
 
-    pub fn inner_exclusive_access(&self) -> TicketGuard<'_, VdsoInner> {
-        // println!("Acquiring VDSO lock...");
-        self.inner.lock()
+    pub fn locked(&self) -> bool {
+        self.block_sched.load(atomic::Ordering::SeqCst)
     }
 }
+
+// impl VdsoData {
+//     pub fn new() -> Self {
+//         Self {
+//             block_sched: AtomicBool::new(false),
+//             inner: TicketLock::new(VdsoInner {
+//                 task_manager: TaskManager::new(),
+//                 current_task: [None; PROCESSOR_NUM],
+//             }),
+//         }
+//     }
+
+//     pub fn locked(&self) -> bool {
+//         self.block_sched.load(atomic::Ordering::Relaxed)
+//     }
+
+//     pub fn inner_exclusive_access(&self) -> TicketGuard<'_, VdsoInner> {
+//         println!("kernel Acquiring VDSO lock...");
+//         self.inner.lock()
+//     }
+// }
 
 lazy_static! {
     pub static ref VDSO_PAGE: Arc<Vec<FrameTracker>> = {
@@ -50,7 +71,7 @@ lazy_static! {
         ppn.reverse();
         Arc::new(ppn)
     };
-    pub static ref VDSO_DATA: &'static VdsoData = {
+    pub static ref VDSO_DATA: UPIntrFreeCell<&'static mut VdsoData> = {
         // 取第一页
         let va: usize = KERNEL_VDSO_BASE;
         // println!("VDSO data at PA: {:#x}", pa.0);
@@ -61,7 +82,9 @@ lazy_static! {
         }
 
         info!("[kernel] VDSO data initialized");
-        unsafe {core::mem::transmute::<*const VdsoData, &'static VdsoData>(va as *const VdsoData)}
+        unsafe {
+            UPIntrFreeCell::new(&mut *(va as *mut VdsoData))
+        }
     };
     
 }

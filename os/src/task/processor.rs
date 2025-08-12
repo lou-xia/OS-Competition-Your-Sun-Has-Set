@@ -26,17 +26,11 @@ impl Processor {
     }
 
     pub fn take_current(&mut self) -> Option<Arc<TaskSched, LockedHeapAllocator>> {
-        let mut inner = VDSO_DATA.inner_exclusive_access();
-        let result = inner.current_task[0].take();
-        drop(inner);
-        result
+        VDSO_DATA.exclusive_access().current_task[0].take()
     }
 
     pub fn current(&self) -> Option<Arc<TaskSched, LockedHeapAllocator>> {
-        let inner = VDSO_DATA.inner_exclusive_access();
-        let task = inner.current_task[0].as_ref().cloned();
-        drop(inner);
-        task
+        VDSO_DATA.exclusive_access().current_task[0].clone()
     }
 }
 
@@ -56,11 +50,8 @@ pub fn run_tasks() {
                 &task_inner.task_cx as *const TaskContext
             });
             {
-                println!("acquired VDSO lock at run_tasks");
-                let mut vdso_inner = VDSO_DATA.inner_exclusive_access();
+                let mut vdso_inner = VDSO_DATA.exclusive_access();
                 vdso_inner.current_task[0] = Some(task.clone());
-                drop(vdso_inner); // 显式释放VDSO锁
-                println!("released VDSO lock at run_tasks");
             }
             // release processor manually
             drop(processor);

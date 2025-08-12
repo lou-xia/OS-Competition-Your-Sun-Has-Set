@@ -8,7 +8,7 @@ pub struct TicketLock<T> {
     data: UnsafeCell<T>,   // 被保护的数据
 }
 
-unsafe impl<T: Sync> Sync for TicketLock<T> {}
+unsafe impl<T: Send> Sync for TicketLock<T> {}
 
 impl<T> TicketLock<T> {
     pub const fn new(data: T) -> Self {
@@ -20,19 +20,12 @@ impl<T> TicketLock<T> {
     }
 
     pub fn lock(&self) -> TicketGuard<'_, T> {
-        println!("About to fetch ticket...");
         // 获取票号（原子递增）
         let ticket = self.next.fetch_add(1, Ordering::Relaxed);
-        println!("Got ticket: {}", ticket);
         
-        // 等待直到轮到当前票号
-        let mut serve_val = self.serve.load(Ordering::Acquire);
-        println!("Current serve: {}, my ticket: {}", serve_val, ticket);
-        while serve_val != ticket {
-            core::hint::spin_loop(); // 自旋等待
-            serve_val = self.serve.load(Ordering::Acquire);
+        while self.serve.load(Ordering::Acquire) != ticket {
+            core::hint::spin_loop(); // 等待直到轮到当前票号
         }
-        println!("Lock acquired for ticket: {}", ticket);
         TicketGuard { lock: self }
     }
 

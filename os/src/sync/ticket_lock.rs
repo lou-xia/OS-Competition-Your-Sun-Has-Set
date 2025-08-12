@@ -9,7 +9,7 @@ pub struct TicketLock<T> {
     data: UnsafeCell<T>,   // 被保护的数据
 }
 
-unsafe impl<T: Sync> Sync for TicketLock<T> {}
+unsafe impl<T: Send> Sync for TicketLock<T> {}
 
 impl<T> TicketLock<T> {
     pub const fn new(data: T) -> Self {
@@ -26,7 +26,7 @@ impl<T> TicketLock<T> {
         
         // 等待直到轮到当前票号
         while self.serve.load(Ordering::Acquire) != ticket {
-            core::hint::spin_loop(); // 自旋等待
+            core::hint::spin_loop(); // 等待直到轮到当前票号
         }
         TicketGuard { lock: self }
     }
