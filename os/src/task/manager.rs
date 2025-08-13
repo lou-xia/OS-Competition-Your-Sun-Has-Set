@@ -1,3 +1,5 @@
+use core::sync::atomic::AtomicBool;
+
 use super::{ProcessControlBlock, TaskContext, TaskControlBlock, TaskStatus};
 use crate::{sync::{TicketGuard, TicketLock, UPIntrFreeCell}, vdso::vdso::{LockedHeapAllocator, VDSO_DATA, VDSO_HEAP_ALLOCATOR}};
 use alloc::{collections::btree_map::BTreeMap, sync::Arc};
@@ -15,6 +17,7 @@ pub struct TaskManager {
 #[derive(Debug)]
 pub struct TaskSched {
     pub id: (usize, usize), // 任务ID(同时是线程id)
+    pub can_user_sched: AtomicBool, // 用户是否可以调度
     pub inner: TicketLock<TaskSchedInner>,
 }
 
@@ -30,26 +33,13 @@ impl TaskSched {
     pub fn new(pid: usize, tid: usize, prio: usize, task_cx: TaskContext, task_status: TaskStatus) -> Self {
         Self {
             id: (pid, tid),
+            can_user_sched: AtomicBool::new(false), // 默认用户不可调度
             inner:
                 TicketLock::new(TaskSchedInner {
                     prio,
                     aging: 0,
                     task_cx,
                     task_status,
-                })
-            ,
-        }
-    }
-
-    pub fn empty() -> Self {
-        Self {
-            id: (0, 0),
-            inner: 
-                TicketLock::new(TaskSchedInner {
-                    prio: 0,
-                    aging: 0,
-                    task_cx: TaskContext::zero_init(),
-                    task_status: TaskStatus::Ready,
                 })
             ,
         }
@@ -73,6 +63,23 @@ impl TaskSched {
     pub fn get_dynamic_prio(&self) -> usize {
         let inner = self.inner_exclusive_access();
         inner.prio + inner.aging
+    }
+}
+
+impl Default for TaskSched {
+    fn default() -> Self {
+        Self {
+            id: (0, 0),
+            can_user_sched: AtomicBool::new(false),
+            inner: 
+                TicketLock::new(TaskSchedInner {
+                    prio: 0,
+                    aging: 0,
+                    task_cx: TaskContext::zero_init(),
+                    task_status: TaskStatus::Ready,
+                })
+            ,
+        }
     }
 }
 
@@ -108,7 +115,7 @@ impl Ord for TaskSched {
 impl TaskManager {
     pub fn new() -> Self {
         let empty = Arc::new_in(
-            TaskSched::empty(),
+            TaskSched::default(),
             *VDSO_HEAP_ALLOCATOR
         );
         let manager = Self {

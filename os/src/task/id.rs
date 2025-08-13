@@ -160,11 +160,18 @@ impl TaskUserRes {
         // alloc trap_cx
         let trap_cx_bottom = trap_cx_bottom_from_tid(self.tid);
         let trap_cx_top = trap_cx_bottom + PAGE_SIZE;
+        // let user_trap_cx_bottom = trap_cx_bottom - PAGE_SIZE; // 留有一页给用户态映射
+        // let user_trap_cx_top = trap_cx_bottom;
         process_inner.memory_set.insert_framed_area(
             trap_cx_bottom.into(),
             trap_cx_top.into(),
-            MapPermission::R | MapPermission::W,
+            MapPermission::R | MapPermission::W | MapPermission::U,
         );
+        // process_inner.memory_set.insert_framed_area(
+        //     user_trap_cx_bottom.into(),
+        //     user_trap_cx_top.into(),
+        //     MapPermission::R | MapPermission::W | MapPermission::U,
+        // );
     }
 
     fn dealloc_user_res(&self) {

@@ -20,10 +20,10 @@ impl<T> TicketLock<T> {
     }
 
     pub fn lock(&self) -> TicketGuard<'_, T> {
-        println!("About to fetch ticket...");
+        // println!("About to fetch ticket...");
         // 获取票号（原子递增）
         let ticket = self.next.fetch_add(1, Ordering::Relaxed);
-        println!("Got ticket: {}", ticket);
+        // println!("Got ticket: {}", ticket);
         
         while self.serve.load(Ordering::Acquire) != ticket {
             core::hint::spin_loop(); // 等待直到轮到当前票号
