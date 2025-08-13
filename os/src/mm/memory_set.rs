@@ -3,7 +3,7 @@ use super::{PTEFlags, PageTable, PageTableEntry};
 use super::{PhysAddr, PhysPageNum, VirtAddr, VirtPageNum};
 use super::{StepByOne, VPNRange};
 use crate::config::{
-    KERNEL_VDSO_BASE, MEMORY_END, MMIO, PAGE_SIZE, TRAMPOLINE, USER_VDSO_BASE, VDSO_PAGES, VDSO_TRAP_CONTEXT_START_SPECIAL
+    KERNEL_VDSO_BASE, MEMORY_END, MMIO, PAGE_SIZE, TRAMPOLINE, USER_VDSO_BASE, VDSO_PAGES
 };
 use crate::sync::UPIntrFreeCell;
 use crate::vdso::vdso::VDSO_PAGE;
@@ -13,7 +13,7 @@ use alloc::vec::Vec;
 use core::arch::asm;
 use lazy_static::*;
 use log::info;
-use riscv::register::satp;
+use riscv::register::{satp, sstatus};
 
 unsafe extern "C" {
     safe fn stext();
@@ -116,12 +116,12 @@ impl MemorySet {
                 PTEFlags::R | PTEFlags::W | PTEFlags::U,
             );
         }
-        // 单独为Trap开的一个映射
-        self.page_table.map(
-            VirtAddr::from(VDSO_TRAP_CONTEXT_START_SPECIAL).into(),
-            VDSO_PAGE[VDSO_PAGES - 1].ppn,
-            PTEFlags::R | PTEFlags::W,
-        );
+        // // 单独为Trap开的一个映射
+        // self.page_table.map(
+        //     VirtAddr::from(VDSO_TRAP_CONTEXT_START_SPECIAL).into(),
+        //     VDSO_PAGE[VDSO_PAGES - 1].ppn,
+        //     PTEFlags::R | PTEFlags::W,
+        // );
     }
     /// Without kernel stacks.
     pub fn new_kernel() -> Self {
@@ -271,6 +271,7 @@ impl MemorySet {
     pub fn activate(&self) {
         let satp = self.page_table.token();
         unsafe {
+            sstatus::set_sum();
             satp::write(satp);
             asm!("sfence.vma");
         }

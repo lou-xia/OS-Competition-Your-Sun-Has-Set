@@ -3,7 +3,7 @@ mod context;
 use crate::config::{TRAMPOLINE, VDSO_TRAP_CONTEXT_START};
 use crate::syscall::syscall;
 use crate::task::{
-    check_signals_of_current, current_add_signal, current_trap_cx, current_trap_cx_user_va, current_user_token, exit_current_and_run_next, suspend_current_and_run_next, SignalFlags
+    check_signals_of_current, current_add_signal, current_trap_cx, current_trap_cx_user_va, current_user_token, disable_current_task_user_sched, enable_current_task_user_sched, exit_current_and_run_next, suspend_current_and_run_next, SignalFlags
 };
 use crate::timer::{check_timer, set_next_trigger};
 use crate::vdso::vdso::VDSO_DATA;
@@ -65,6 +65,7 @@ pub fn print() {
 pub fn trap_handler() -> ! {
     // println!("[kernel] trap handler called");
     set_kernel_trap_entry();
+    disable_current_task_user_sched();
     let scause = scause::read();
     let stval = stval::read();
     // println!("into {:?}", scause.cause());
@@ -111,6 +112,7 @@ pub fn trap_handler() -> ! {
         }
         Trap::Interrupt(Interrupt::SupervisorTimer) => {
             set_next_trigger();
+            enable_current_task_user_sched();
             // println!("timer interrupt");
             // 阻止内核抢占
             if !VDSO_DATA.exclusive_access().locked() {
@@ -158,6 +160,7 @@ pub fn trap_return() -> ! {
     unsafe {
         (VDSO_TRAP_CONTEXT_START as *mut usize).write(trap_cx_user_va);
     }
+    enable_current_task_user_sched();
 
     // println!("[kernel] trap return");
 

@@ -1,6 +1,6 @@
-use core::{alloc::Layout, ptr::NonNull};
+use core::{alloc::Layout, ptr::NonNull, sync::atomic::Ordering};
 
-use alloc::{alloc::{AllocError, Allocator}, sync::Arc};
+use alloc::{alloc::{AllocError, Allocator}, sync::Arc, vec::Vec};
 use buddy_system_allocator::LockedHeap;
 
 use crate::task_sched::task::TaskSched;
@@ -13,7 +13,6 @@ pub struct TaskManager {
 }
 
 impl TaskManager {
-    // 关键: 不能使用core, 只能使用builtin
     pub fn add(&mut self, task: Arc<TaskSched, LockedHeapAllocator>) {
         if self.size >= self.ready_heap.len() {
             panic!("TaskManager is full, cannot add more tasks");
@@ -36,55 +35,72 @@ impl TaskManager {
     }
 
     pub fn fetch(&mut self) -> Option<Arc<TaskSched, LockedHeapAllocator>> {
-        if self.size == 0 {
-            return None; // 没有任务可调度
-        }
-        // 取出堆顶任务
-        let task = self.ready_heap[0].clone();
-        // println!("fetch task: {:?} dynamic prio={}", task.id, task.get_dynamic_prio());
-        task.inner_exclusive_access().aging = 0; // 重置老化
-        // 将最后一个任务放到堆顶
-        self.size -= 1;
-        if self.size > 0 {
-            self.ready_heap[0] = self.ready_heap[self.size].clone();
-            self.ready_heap[self.size] = self.empty.clone();
-            // 老化
-            for i in 0..self.size {
-                let mut inner = self.ready_heap[i].inner_exclusive_access();
-                inner.aging += 1;
+        let mut unsched_vec = Vec::new();
+        loop {
+            if self.size == 0 {
+                for t in unsched_vec {
+                    self.add(t);
+                }
+                return None; // 没有任务可调度
             }
-            // 下滤操作
-            let mut index = 0;
-            while index < self.size {
-                let left_child = 2 * index + 1;
-                let right_child = 2 * index + 2;
-                let mut largest = index;
+            // 取出堆顶任务
+            let task = self.ready_heap[0].clone();
+            // println!("fetch task: {:?} dynamic prio={}", task.id, task.get_dynamic_prio());
+            // 将最后一个任务放到堆顶
+            self.size -= 1;
+            if self.size > 0 {
+                self.ready_heap[0] = self.ready_heap[self.size].clone();
+                self.ready_heap[self.size] = self.empty.clone();
+                // 老化
+                for i in 0..self.size {
+                    let mut inner = self.ready_heap[i].inner_exclusive_access();
+                    inner.aging += 1;
+                }
+                // 下滤操作
+                let mut index = 0;
+                while index < self.size {
+                    let left_child = 2 * index + 1;
+                    let right_child = 2 * index + 2;
+                    let mut largest = index;
 
-                if left_child < self.size && self.ready_heap[left_child] > self.ready_heap[largest] {
-                    largest = left_child;
-                }
-                if right_child < self.size && self.ready_heap[right_child] > self.ready_heap[largest] {
-                    largest = right_child;
-                }
-                if largest != index {
-                    // 交换, 内联函数
-                    self.ready_heap.swap(index, largest);
-                    index = largest;
-                } else {
-                    break;
+                    if left_child < self.size && self.ready_heap[left_child] > self.ready_heap[largest] {
+                        largest = left_child;
+                    }
+                    if right_child < self.size && self.ready_heap[right_child] > self.ready_heap[largest] {
+                        largest = right_child;
+                    }
+                    if largest != index {
+                        // 交换, 内联函数
+                        self.ready_heap.swap(index, largest);
+                        index = largest;
+                    } else {
+                        break;
+                    }
                 }
             }
+            // 如果用户可以调度
+            if task.can_user_sched.load(Ordering::SeqCst) {
+                task.inner_exclusive_access().aging = 0; // 重置老化
+                // 重新插入之前不可调度的任务
+                for t in unsched_vec {
+                    self.add(t);
+                }
+                return Some(task);
+            } else {
+                unsched_vec.push(task);
+            }
         }
-        Some(task)
+        
 
     }
 
     pub fn peek(&self) -> Option<&Arc<TaskSched, LockedHeapAllocator>> {
-        if self.size == 0 {
-            None
-        } else {
-            Some(&self.ready_heap[0])
+        for i in 0..self.size {
+            if self.ready_heap[i].can_user_sched.load(Ordering::SeqCst) {
+                return Some(&self.ready_heap[i]);
+            }
         }
+        None
     }
 
     pub fn get_size(&self) -> usize {

@@ -9,7 +9,7 @@ pub struct TicketLock<T> {
     data: UnsafeCell<T>,   // 被保护的数据
 }
 
-unsafe impl<T: Send> Sync for TicketLock<T> {}
+unsafe impl<T: Sync> Sync for TicketLock<T> {}
 
 impl<T> TicketLock<T> {
     pub const fn new(data: T) -> Self {
