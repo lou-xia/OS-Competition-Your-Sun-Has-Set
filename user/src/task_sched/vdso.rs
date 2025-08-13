@@ -5,8 +5,10 @@ use lazy_static::lazy_static;
 use spin::Mutex;
 
 use crate::{syscall::sys_yield, task_sched::{
-    manager::{LockedHeapAllocator, TaskManager}, switch::__switch_user, task::{TaskContext, TaskSched, TaskStatus}, PROCESSOR_NUM, USER_VDSO_BASE
+    manager::{LockedHeapAllocator, TaskManager}, switch::__switch_user, task::{TaskSched, TaskStatus}, trap::TrapContext
 }};
+
+use super::{PAGE_SIZE, PROCESSOR_NUM, TRAP_CONTEXT_BASE, USER_VDSO_BASE, VDSO_TRAP_CONTEXT_PTR_BASE};
 
 // #[repr(C)]
 // #[derive(Debug)]
@@ -51,7 +53,20 @@ lazy_static! {
     };
 }
 
+fn trap_cx_bottom_from_tid(tid: usize) -> usize {
+    TRAP_CONTEXT_BASE - tid * PAGE_SIZE
+}
+
+fn get_trap_cx_ptr(tid: usize) -> *mut TrapContext {
+    unsafe {
+        &mut *(trap_cx_bottom_from_tid(tid) as *mut TrapContext)
+    }
+}
+
 pub fn user_schedule() {
+    // sys_yield();
+    // return;
+
     // 为什么要更改所有逻辑处理器的任务?难道不是谁yield，仅更改对应的逻辑处理器的任务吗?
     for i in 0..PROCESSOR_NUM {
         let mut vdso_inner = VDSO_DATA.lock();
@@ -78,28 +93,42 @@ pub fn user_schedule() {
                     //     println!("\ncurrent: {}-{}, {:#x?}, next: {}-{}, {:#x?}",
                     //     current_task.id.0, current_task.id.1, *task_cx, next_task.id.0, next_task.id.1, *next_task_cx);
                     // }
+
+                    // 获取2个TrapContext
+                    let current_trap_cx  = get_trap_cx_ptr(current_task.id.1);
+                    let next_trap_cx = get_trap_cx_ptr(next_task.id.1);
                     // 添加任务到任务管理器
                     task_manager.add(current_task);
                     // 修改当前任务
                     vdso_inner.current_task[i].replace(next_task);
-
-                    // 获取2个TrapContext
-
-
                     drop(vdso_inner); // 释放锁
-                    // unsafe {
-                    //     __switch_user(task_cx, next_task_cx);
-                    // }
-                    continue;
+
+                    unsafe {
+                        // 更新TRAP_CONTEXT_PTR指向当前任务的trap context
+                        (VDSO_TRAP_CONTEXT_PTR_BASE as *mut usize).write(next_trap_cx as usize);
+                    }
+                    unsafe {
+                        __switch_user(current_trap_cx, next_trap_cx);
+                    }
+
+                    let vdso_inner = VDSO_DATA.lock();
+                    vdso_inner.unblock_sched();
                 } else {
                     // 调用系统调用进行调度
                     vdso_inner.unblock_sched();
                     drop(vdso_inner); // 释放锁
                     sys_yield();
-                    continue;
                 }
             } else {
-                // 继续运行即可
+                if task_manager.get_size() > 0 {
+                    vdso_inner.unblock_sched();
+                    drop(vdso_inner); // 释放锁
+                    sys_yield();
+                } else {
+                    // 没有任务可调度
+                    vdso_inner.unblock_sched();
+                    drop(vdso_inner); // 释放锁
+                }
             }
         } else {
             panic!("No current task in user space!");

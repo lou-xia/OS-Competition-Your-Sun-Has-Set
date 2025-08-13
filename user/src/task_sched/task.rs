@@ -1,9 +1,12 @@
+use core::sync::atomic::AtomicBool;
+
 use super::ticket_lock::{TicketGuard, TicketLock};
 
 
 #[derive(Debug)]
 pub struct TaskSched {
     pub id: (usize, usize), // 任务ID(同时是线程id)
+    pub can_user_sched: AtomicBool, // 用户是否可以调度
     pub inner: TicketLock<TaskSchedInner>,
 }
 

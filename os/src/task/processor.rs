@@ -7,6 +7,7 @@ use crate::trap::TrapContext;
 use crate::vdso::vdso::{LockedHeapAllocator, VDSO_DATA};
 use alloc::sync::Arc;
 use core::arch::asm;
+use core::sync::atomic::Ordering;
 use lazy_static::*;
 
 pub struct Processor {
@@ -120,6 +121,16 @@ pub fn current_kstack_top() -> usize {
         unsafe { asm!("la {},boot_stack_top",out(reg) boot_stack_top) };
         boot_stack_top
     }
+}
+
+pub fn disable_current_task_user_sched() {
+    let task = current_task().unwrap();
+    task.sched.can_user_sched.store(false, Ordering::SeqCst);
+}
+
+pub fn enable_current_task_user_sched() {
+    let task = current_task().unwrap();
+    task.sched.can_user_sched.store(true, Ordering::SeqCst);
 }
 
 pub fn schedule(switched_task_cx_ptr: *mut TaskContext) {
