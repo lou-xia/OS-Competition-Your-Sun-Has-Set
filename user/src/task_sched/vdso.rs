@@ -130,15 +130,10 @@ pub fn user_schedule() {
                 sys_yield();
             }
         } else {
-            if task_manager.get_size() > 0 {
-                vdso_inner.unblock_sched();
-                drop(vdso_inner); // 释放锁
-                sys_yield();
-            } else {
-                // 没有任务可调度
-                vdso_inner.unblock_sched();
-                drop(vdso_inner); // 释放锁
-            }
+            // 调用系统调用进行调度
+            vdso_inner.unblock_sched();
+            drop(vdso_inner); // 释放锁
+            sys_yield();
         }
     } else {
         panic!("No current task in user space!");

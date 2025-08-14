@@ -1,17 +1,18 @@
-use core::sync::atomic::AtomicBool;
+use core::sync::atomic::{AtomicBool, Ordering};
 
 use super::{ProcessControlBlock, TaskContext, TaskControlBlock, TaskStatus};
 use crate::{sync::{TicketGuard, TicketLock, UPIntrFreeCell}, vdso::vdso::{LockedHeapAllocator, VDSO_DATA, VDSO_HEAP_ALLOCATOR}};
-use alloc::{collections::btree_map::BTreeMap, sync::Arc};
+use alloc::{collections::{btree_map::BTreeMap, vec_deque::VecDeque}, sync::Arc, vec::Vec};
 use lazy_static::*;
 
 #[derive(Debug)]
 pub struct TaskManager {
-    // ready_queue: VecDeque<Task>,
-    // ready_queue: BTreeSet<Arc<TaskSched>>,
-    ready_heap: [Arc<TaskSched, LockedHeapAllocator>; 128], // 使用数组代替VecDeque, 目前最大128
-    size: usize, // 当前队列大小
-    empty: Arc<TaskSched, LockedHeapAllocator>, // 占位用
+    ready_heap: Vec<Arc<TaskSched, LockedHeapAllocator>, LockedHeapAllocator>, // 就绪任务堆, 大根堆
+}
+
+#[derive(Debug)]
+pub struct KernelTaskManager {
+    ready_queue: VecDeque<Arc<TaskSched, LockedHeapAllocator>>, // 就绪任务队列, FIFO
 }
 
 #[derive(Debug)]
@@ -33,7 +34,7 @@ impl TaskSched {
     pub fn new(pid: usize, tid: usize, prio: usize, task_cx: TaskContext, task_status: TaskStatus) -> Self {
         Self {
             id: (pid, tid),
-            can_user_sched: AtomicBool::new(false), // 默认用户不可调度
+            can_user_sched: AtomicBool::new(true), // 默认用户不可调度
             inner:
                 TicketLock::new(TaskSchedInner {
                     prio,
@@ -63,23 +64,6 @@ impl TaskSched {
     pub fn get_dynamic_prio(&self) -> usize {
         let inner = self.inner_exclusive_access();
         inner.prio + inner.aging
-    }
-}
-
-impl Default for TaskSched {
-    fn default() -> Self {
-        Self {
-            id: (0, 0),
-            can_user_sched: AtomicBool::new(false),
-            inner: 
-                TicketLock::new(TaskSchedInner {
-                    prio: 0,
-                    aging: 0,
-                    task_cx: TaskContext::zero_init(),
-                    task_status: TaskStatus::Ready,
-                })
-            ,
-        }
     }
 }
 
@@ -114,33 +98,22 @@ impl Ord for TaskSched {
 
 impl TaskManager {
     pub fn new() -> Self {
-        let empty = Arc::new_in(
-            TaskSched::default(),
-            *VDSO_HEAP_ALLOCATOR
-        );
-        let manager = Self {
-            ready_heap: core::array::from_fn(|_| {
-                // println!("Creating empty task in TaskManager");
-                empty.clone()
-            }),
-            size: 0,
-            empty,
-        };
-        // println!("TaskManager initialized with size: {}", manager.size);
-        manager
+        Self {
+            ready_heap: Vec::with_capacity_in(1 << 7, *VDSO_HEAP_ALLOCATOR),
+        }
+    }
+
+    #[inline(always)]
+    fn len(&self) -> usize {
+        self.ready_heap.len()
     }
 
     // 关键: 不能使用core, 只能使用builtin
     pub fn add(&mut self, task: Arc<TaskSched, LockedHeapAllocator>) {
-        if self.size >= self.ready_heap.len() {
-            // 不panic，直接返回，由调用者处理
-            return;
-        }
         // 插入任务到堆中
-        self.ready_heap[self.size] = task;
-        self.size += 1;
+        self.ready_heap.push(task);
         // 进行上滤操作
-        let mut index = self.size - 1;
+        let mut index = self.len() - 1;
         while index > 0 {
             let parent_index = (index - 1) / 2;
             if self.ready_heap[index] > self.ready_heap[parent_index] {
@@ -154,57 +127,106 @@ impl TaskManager {
     }
 
     pub fn fetch(&mut self) -> Option<Arc<TaskSched, LockedHeapAllocator>> {
-        if self.size == 0 {
+        if self.len() == 0 {
             return None; // 没有任务可调度
+        } else if self.len() == 1 {
+            return self.ready_heap.pop(); // 只有一个任务, 直接弹出
         }
-        // 取出堆顶任务
-        let task = self.ready_heap[0].clone();
-        // println!("fetch task: {:?} dynamic prio={}", task.id, task.get_dynamic_prio());
+        // 取出堆顶任务,同时将最后一个任务放到堆顶
+        let task = self.ready_heap.swap_remove(0);
         task.inner_exclusive_access().aging = 0; // 重置老化
-        // 将最后一个任务放到堆顶
-        self.size -= 1;
-        if self.size > 0 {
-            self.ready_heap[0] = self.ready_heap[self.size].clone();
-            self.ready_heap[self.size] = self.empty.clone();
-            // 老化
-            for i in 0..self.size {
-                let mut inner = self.ready_heap[i].inner_exclusive_access();
-                inner.aging += 1;
-            }
-            // 下滤操作
-            let mut index = 0;
-            while index < self.size {
-                let left_child = 2 * index + 1;
-                let right_child = 2 * index + 2;
-                let mut largest = index;
 
-                if left_child < self.size && self.ready_heap[left_child] > self.ready_heap[largest] {
-                    largest = left_child;
-                }
-                if right_child < self.size && self.ready_heap[right_child] > self.ready_heap[largest] {
-                    largest = right_child;
-                }
-                if largest != index {
-                    // 交换, 内联函数
-                    self.ready_heap.swap(index, largest);
-                    index = largest;
-                } else {
-                    break;
-                }
+        // 老化
+        for i in 0..self.len() {
+            let mut inner = self.ready_heap[i].inner_exclusive_access();
+            inner.aging += 1;
+        }
+        // 下滤操作
+        let mut index = 0;
+        while index < self.len() {
+            let left_child = 2 * index + 1;
+            let right_child = 2 * index + 2;
+            let mut largest = index;
+
+            if left_child < self.len() && self.ready_heap[left_child] > self.ready_heap[largest] {
+                largest = left_child;
+            }
+            if right_child < self.len() && self.ready_heap[right_child] > self.ready_heap[largest] {
+                largest = right_child;
+            }
+            if largest != index {
+                // 交换, 内联函数
+                self.ready_heap.swap(index, largest);
+                index = largest;
+            } else {
+                break;
             }
         }
         Some(task)
 
+    }
+
+    fn peek(&self) -> Option<&Arc<TaskSched, LockedHeapAllocator>> {
+        self.ready_heap.get(0)
+    }
+
+    fn add_aging_all(&mut self) {
+        for task in self.ready_heap.iter() {
+            let mut inner = task.inner_exclusive_access();
+            inner.aging += 1;
+        }
+    }
+}
+
+impl KernelTaskManager {
+    pub fn new() -> Self {
+        Self {
+            ready_queue: VecDeque::new(),
+        }
+    }
+
+    pub fn add(&mut self, task: Arc<TaskSched, LockedHeapAllocator>) {
+        self.ready_queue.push_back(task);
+    }
+
+    pub fn fetch(&mut self) -> Option<Arc<TaskSched, LockedHeapAllocator>> {
+        self.ready_queue.pop_front()
+    }
+
+    #[inline(always)]
+    #[allow(unused)]
+    fn len(&self) -> usize {
+        self.ready_queue.len()
+    }
+
+    fn peek(&self) -> Option<&Arc<TaskSched, LockedHeapAllocator>> {
+        self.ready_queue.front()
+    }
+
+    fn add_aging_all(&mut self) {
+        for task in self.ready_queue.iter() {
+            let mut inner = task.inner_exclusive_access();
+            inner.aging += 1;
+        }
     }
 }
 
 lazy_static! {
     pub static ref PID2PCB: UPIntrFreeCell<BTreeMap<usize, Arc<ProcessControlBlock>>> =
         unsafe { UPIntrFreeCell::new(BTreeMap::new()) };
+    pub static ref KERNEL_TASK_MANAGER: UPIntrFreeCell<KernelTaskManager> =
+        unsafe { UPIntrFreeCell::new(KernelTaskManager::new()) };
 }
 
 pub fn add_task(task: Arc<TaskSched, LockedHeapAllocator>) {
-    VDSO_DATA.exclusive_access().task_manager.add(task);
+    if task.can_user_sched.load(Ordering::SeqCst) {
+        // 用户可调度的任务
+        VDSO_DATA.exclusive_access().task_manager.add(task);
+    } else {
+        // 内核任务, 直接添加到内核任务管理器
+        KERNEL_TASK_MANAGER.exclusive_access().add(task);
+    }
+    // KERNEL_TASK_MANAGER.exclusive_access().add(task);
 }
 
 pub fn wakeup_task(task: Arc<TaskControlBlock>) {
@@ -215,7 +237,27 @@ pub fn wakeup_task(task: Arc<TaskControlBlock>) {
 }
 
 pub fn fetch_task() -> Option<Arc<TaskSched, LockedHeapAllocator>> {
-    VDSO_DATA.exclusive_access().task_manager.fetch()
+    let mut kernel_inner = KERNEL_TASK_MANAGER.exclusive_access();
+    let mut vdso_inner = VDSO_DATA.exclusive_access();
+    if kernel_inner.len() > 0 {
+        if vdso_inner.task_manager.len() > 0 {
+            let kernel_peek = kernel_inner.peek().unwrap();
+            let vdso_peek = vdso_inner.task_manager.peek().unwrap();
+            if kernel_peek.get_dynamic_prio() + 5 >= vdso_peek.get_dynamic_prio() {
+                // 内核任务优先级更高, 选择内核任务
+                vdso_inner.task_manager.add_aging_all();
+                kernel_inner.fetch()
+            } else {
+                // 用户任务优先级更高, 选择用户任务
+                kernel_inner.add_aging_all();
+                vdso_inner.task_manager.fetch()
+            }
+        } else {
+            kernel_inner.fetch()
+        }
+    } else {
+        vdso_inner.task_manager.fetch()
+    }
 }
 
 pub fn pid2process(pid: usize) -> Option<Arc<ProcessControlBlock>> {
