@@ -111,24 +111,21 @@ pub fn user_schedule() {
                         __switch_user(current_trap_cx, next_trap_cx);
                     }
 
+                    // println!("user_schedule branch 1");
+
                     let vdso_inner = VDSO_DATA.lock();
                     vdso_inner.unblock_sched();
                 } else {
                     // 调用系统调用进行调度
                     vdso_inner.unblock_sched();
                     drop(vdso_inner); // 释放锁
+                    // println!("user_schedule branch 2");
                     sys_yield();
                 }
             } else {
-                if task_manager.get_size() > 0 {
-                    vdso_inner.unblock_sched();
-                    drop(vdso_inner); // 释放锁
-                    sys_yield();
-                } else {
-                    // 没有任务可调度
-                    vdso_inner.unblock_sched();
-                    drop(vdso_inner); // 释放锁
-                }
+                vdso_inner.unblock_sched();
+                drop(vdso_inner); // 释放锁
+                sys_yield(); // 考虑一下这个分支和上一个分支是否有更好的选择
             }
         } else {
             panic!("No current task in user space!");
