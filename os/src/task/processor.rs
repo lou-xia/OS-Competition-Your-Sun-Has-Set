@@ -124,13 +124,13 @@ pub fn current_kstack_top() -> usize {
 }
 
 pub fn disable_current_task_user_sched() {
-    let task = current_task().unwrap();
-    task.sched.can_user_sched.store(false, Ordering::SeqCst);
+    let sched = PROCESSOR.exclusive_access().current().unwrap();
+    sched.can_user_sched.store(false, Ordering::SeqCst);
 }
 
 pub fn enable_current_task_user_sched() {
-    let task = current_task().unwrap();
-    task.sched.can_user_sched.store(true, Ordering::SeqCst);
+    let sched = PROCESSOR.exclusive_access().current().unwrap();
+    sched.can_user_sched.store(true, Ordering::SeqCst);
 }
 
 pub fn schedule(switched_task_cx_ptr: *mut TaskContext) {

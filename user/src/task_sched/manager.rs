@@ -1,4 +1,4 @@
-use core::{alloc::Layout, ptr::NonNull, sync::atomic::Ordering};
+use core::{alloc::Layout, ptr::NonNull};
 
 use alloc::{alloc::{AllocError, Allocator}, sync::Arc, vec::Vec};
 use buddy_system_allocator::LockedHeap;
@@ -16,9 +16,11 @@ impl TaskManager {
     }
 
     pub fn add(&mut self, task: Arc<TaskSched, LockedHeapAllocator>) {
-        if self.len() >= self.ready_heap.len() {
-            panic!("TaskManager is full, cannot add more tasks");
+        if !task.can_user_sched.load(core::sync::atomic::Ordering::SeqCst) {
+            // 用户可调度的任务
+            println!("add task which can not user sched: {:?}", task.id);
         }
+        // task.clear_dynamic_priority();
         // 插入任务到堆中
         self.ready_heap.push(task);
         // 进行上滤操作
@@ -44,11 +46,11 @@ impl TaskManager {
         }
         // 取出堆顶任务, 同时将最后一个任务放到堆顶
         let task = self.ready_heap.swap_remove(0);
+        task.clear_dynamic_priority();
         // println!("fetch task: {:?} dynamic prio={}", task.id, task.get_dynamic_prio());
         // 老化
-        for i in 0..self.len() {
-            let mut inner = self.ready_heap[i].inner_exclusive_access();
-            inner.aging += 1;
+        for task in self.ready_heap.iter() {
+            task.add_dynamic_priority(1);
         }
         // 下滤操作
         let mut index = 0;
@@ -75,13 +77,15 @@ impl TaskManager {
 
     }
 
+    #[inline(always)]
     pub fn peek(&self) -> Option<&Arc<TaskSched, LockedHeapAllocator>> {
-        for i in 0..self.len() {
-            if self.ready_heap[i].can_user_sched.load(Ordering::SeqCst) {
-                return Some(&self.ready_heap[i]);
-            }
-        }
-        None
+        // for i in 0..self.len() {
+        //     if self.ready_heap[i].can_user_sched.load(core::sync::atomic::Ordering::SeqCst) {
+        //         return Some(&self.ready_heap[i]);
+        //     }
+        // }
+        // None
+        self.ready_heap.get(0)
     }
 }
 

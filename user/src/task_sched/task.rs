@@ -13,7 +13,7 @@ pub struct TaskSched {
 #[derive(Debug)]
 pub struct TaskSchedInner {
     pub prio: usize, // 静态优先级
-    pub aging: usize, // 老化机制, 用于防止饥饿
+    pub dynamic: usize, // 老化机制, 用于防止饥饿
     pub task_cx: TaskContext,
     pub task_status: TaskStatus,
 }
@@ -35,28 +35,33 @@ impl TaskSched {
 
     pub fn get_dynamic_prio(&self) -> usize {
         let inner = self.inner_exclusive_access();
-        inner.prio + inner.aging
+        inner.dynamic
+    }
+
+    #[inline]
+    pub fn add_dynamic_priority(&self, delta: usize) {
+        let mut inner = self.inner_exclusive_access();
+        inner.dynamic += delta;
+    }
+
+    #[inline]
+    pub fn clear_dynamic_priority(&self) {
+        let mut inner = self.inner_exclusive_access();
+        inner.dynamic = inner.prio;
     }
 }
 
 impl PartialEq for TaskSched {
     fn eq(&self, other: &Self) -> bool {
-        (self.get_dynamic_prio() == other.get_dynamic_prio()) && (self.id == other.id)
+        self.get_dynamic_prio() == other.get_dynamic_prio()
     }
 }
 
 impl PartialOrd for TaskSched {
-    // 大根堆, 优先级高的任务在前
     fn partial_cmp(&self, other: &Self) -> Option<core::cmp::Ordering> {
         let p1 = self.get_dynamic_prio();
         let p2 = other.get_dynamic_prio();
-        Some(
-            if p1 == p2 {
-                self.id.cmp(&other.id)
-            } else {
-                p1.cmp(&p2)
-            }
-        )
+        Some(p1.cmp(&p2))
     }
 }
 
@@ -64,7 +69,9 @@ impl Eq for TaskSched {}
 
 impl Ord for TaskSched {
     fn cmp(&self, other: &Self) -> core::cmp::Ordering {
-        self.partial_cmp(other).unwrap_or(core::cmp::Ordering::Equal)
+        let p1 = self.get_dynamic_prio();
+        let p2 = other.get_dynamic_prio();
+        p1.cmp(&p2)
     }
 }
 

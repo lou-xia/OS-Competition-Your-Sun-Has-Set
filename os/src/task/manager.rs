@@ -5,6 +5,8 @@ use crate::{sync::{TicketGuard, TicketLock, UPIntrFreeCell}, vdso::vdso::{Locked
 use alloc::{collections::{btree_map::BTreeMap, vec_deque::VecDeque}, sync::Arc, vec::Vec};
 use lazy_static::*;
 
+pub const DEFAULT_AGING: usize = 0;
+
 #[derive(Debug)]
 pub struct TaskManager {
     ready_heap: Vec<Arc<TaskSched, LockedHeapAllocator>, LockedHeapAllocator>, // 就绪任务堆, 大根堆
@@ -25,7 +27,7 @@ pub struct TaskSched {
 #[derive(Debug)]
 pub struct TaskSchedInner {
     pub prio: usize, // 静态优先级
-    pub aging: usize, // 老化机制, 用于防止饥饿
+    pub dynamic: usize, // 老化机制, 用于防止饥饿,预计算动态优先级
     pub task_cx: TaskContext,
     pub task_status: TaskStatus,
 }
@@ -34,11 +36,11 @@ impl TaskSched {
     pub fn new(pid: usize, tid: usize, prio: usize, task_cx: TaskContext, task_status: TaskStatus) -> Self {
         Self {
             id: (pid, tid),
-            can_user_sched: AtomicBool::new(true), // 默认用户不可调度
+            can_user_sched: AtomicBool::new(false), // 默认用户不可调度
             inner:
                 TicketLock::new(TaskSchedInner {
                     prio,
-                    aging: 0,
+                    dynamic: prio + DEFAULT_AGING,
                     task_cx,
                     task_status,
                 })
@@ -61,15 +63,27 @@ impl TaskSched {
     }
 
     #[inline]
-    pub fn get_dynamic_prio(&self) -> usize {
+    fn get_dynamic_prio(&self) -> usize {
         let inner = self.inner_exclusive_access();
-        inner.prio + inner.aging
+        inner.dynamic
+    }
+
+    #[inline]
+    fn add_dynamic_priority(&self, delta: usize) {
+        let mut inner = self.inner_exclusive_access();
+        inner.dynamic += delta;
+    }
+
+    #[inline]
+    fn clear_dynamic_priority(&self) {
+        let mut inner = self.inner_exclusive_access();
+        inner.dynamic = inner.prio;
     }
 }
 
 impl PartialEq for TaskSched {
     fn eq(&self, other: &Self) -> bool {
-        (self.get_dynamic_prio() == other.get_dynamic_prio()) && (self.id == other.id)
+        self.get_dynamic_prio() == other.get_dynamic_prio()
     }
 }
 
@@ -78,13 +92,7 @@ impl PartialOrd for TaskSched {
     fn partial_cmp(&self, other: &Self) -> Option<core::cmp::Ordering> {
         let p1 = self.get_dynamic_prio();
         let p2 = other.get_dynamic_prio();
-        Some(
-            if p1 == p2 {
-                self.id.cmp(&other.id)
-            } else {
-                p1.cmp(&p2)
-            }
-        )
+        Some(p1.cmp(&p2))
     }
 }
 
@@ -92,14 +100,16 @@ impl Eq for TaskSched {}
 
 impl Ord for TaskSched {
     fn cmp(&self, other: &Self) -> core::cmp::Ordering {
-        self.partial_cmp(other).unwrap_or(core::cmp::Ordering::Equal)
+        let p1 = self.get_dynamic_prio();
+        let p2 = other.get_dynamic_prio();
+        p1.cmp(&p2)
     }
 }
 
 impl TaskManager {
     pub fn new() -> Self {
         Self {
-            ready_heap: Vec::with_capacity_in(1 << 7, *VDSO_HEAP_ALLOCATOR),
+            ready_heap: Vec::with_capacity_in(1 << 5, *VDSO_HEAP_ALLOCATOR),
         }
     }
 
@@ -110,6 +120,7 @@ impl TaskManager {
 
     // 关键: 不能使用core, 只能使用builtin
     pub fn add(&mut self, task: Arc<TaskSched, LockedHeapAllocator>) {
+        // task.clear_dynamic_priority();
         // 插入任务到堆中
         self.ready_heap.push(task);
         // 进行上滤操作
@@ -134,13 +145,10 @@ impl TaskManager {
         }
         // 取出堆顶任务,同时将最后一个任务放到堆顶
         let task = self.ready_heap.swap_remove(0);
-        task.inner_exclusive_access().aging = 0; // 重置老化
+        task.clear_dynamic_priority();
 
         // 老化
-        for i in 0..self.len() {
-            let mut inner = self.ready_heap[i].inner_exclusive_access();
-            inner.aging += 1;
-        }
+        self.add_aging_all();
         // 下滤操作
         let mut index = 0;
         while index < self.len() {
@@ -166,14 +174,15 @@ impl TaskManager {
 
     }
 
+    #[inline(always)]
     fn peek(&self) -> Option<&Arc<TaskSched, LockedHeapAllocator>> {
         self.ready_heap.get(0)
     }
 
+    #[inline]
     fn add_aging_all(&mut self) {
         for task in self.ready_heap.iter() {
-            let mut inner = task.inner_exclusive_access();
-            inner.aging += 1;
+            task.add_dynamic_priority(1);
         }
     }
 }
@@ -205,8 +214,7 @@ impl KernelTaskManager {
 
     fn add_aging_all(&mut self) {
         for task in self.ready_queue.iter() {
-            let mut inner = task.inner_exclusive_access();
-            inner.aging += 1;
+            task.add_dynamic_priority(1);
         }
     }
 }
@@ -221,6 +229,7 @@ lazy_static! {
 pub fn add_task(task: Arc<TaskSched, LockedHeapAllocator>) {
     if task.can_user_sched.load(Ordering::SeqCst) {
         // 用户可调度的任务
+        // println!("[kernel] add user task: {:?}", task.id);
         VDSO_DATA.exclusive_access().task_manager.add(task);
     } else {
         // 内核任务, 直接添加到内核任务管理器

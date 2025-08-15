@@ -80,12 +80,14 @@ pub fn trap_handler() -> ! {
             // }
             enable_supervisor_interrupt();
 
+            // disable_current_task_user_sched();
             // get system call return value
             let result = syscall(cx.x[17], [cx.x[10], cx.x[11], cx.x[12]]);
             // cx is changed during sys_exec, so we have to call it again
             cx = current_trap_cx();
             cx.x[10] = result as usize;
             // current_task().unwrap().sched.inner_exclusive_access().task_cx.sepc = cx.sepc;
+            // enable_current_task_user_sched();
         }
         Trap::Exception(Exception::StoreFault)
         | Trap::Exception(Exception::StorePageFault)
@@ -112,11 +114,11 @@ pub fn trap_handler() -> ! {
         }
         Trap::Interrupt(Interrupt::SupervisorTimer) => {
             set_next_trigger();
-            enable_current_task_user_sched();
+            check_timer();
+            // enable_current_task_user_sched();
             // println!("timer interrupt");
             // 阻止内核抢占
             if !VDSO_DATA.exclusive_access().locked() {
-                check_timer();
                 // if current_task().unwrap().sched.id.0 != 0 && current_task().unwrap().sched.id.0 != 1 {
                 //     println!("[kernel]time interrupt {}-{}", current_task().unwrap().sched.id.0, current_task().unwrap().sched.id.1);
                 // }
@@ -129,7 +131,9 @@ pub fn trap_handler() -> ! {
             }
         }
         Trap::Interrupt(Interrupt::SupervisorExternal) => {
+            // disable_current_task_user_sched();
             crate::board::irq_handler();
+            // enable_current_task_user_sched();
         }
         _ => {
             panic!(

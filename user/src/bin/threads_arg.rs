@@ -6,7 +6,7 @@ extern crate user_lib;
 extern crate alloc;
 
 use alloc::vec::Vec;
-use user_lib::{exit, thread_create, waittid, yield_};
+use user_lib::{exit, get_time, thread_create, waittid, yield_};
 
 struct Argument {
     pub ch: char,
@@ -30,6 +30,7 @@ pub fn main() -> i32 {
         Argument { ch: 'b', rc: 2 },
         Argument { ch: 'c', rc: 3 },
     ];
+    let start = get_time() as usize;
     for arg in args.iter() {
         v.push(thread_create(
             thread_print as usize,
@@ -40,6 +41,8 @@ pub fn main() -> i32 {
         let exit_code = waittid(*tid as usize);
         println!("thread#{} exited with code {}", tid, exit_code);
     }
+    let end = get_time() as usize;
+    println!("Total time: {} ms", end - start);
     println!("main thread exited.");
     0
 }

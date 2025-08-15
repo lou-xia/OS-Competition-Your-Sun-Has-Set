@@ -80,55 +80,49 @@ pub fn user_schedule() {
     let mut vdso_inner = VDSO_DATA.lock();
     vdso_inner.block_sched(); // 阻塞内核抢占
 
-    if let Some(task) = &vdso_inner.current_task[current_processor] {
-        let current_task = task.clone();
-        let task_manager = &mut vdso_inner.task_manager;
+    let current_task = vdso_inner.current_task[current_processor].clone().unwrap();
 
-        if let Some(next_task_ref) = task_manager.peek() {
-            if next_task_ref.id.0 == current_task.id.0 {
-                // 同一地址空间，由用户进行调度
-                assert_ne!(
-                    next_task_ref.id.1, current_task.id.1,
-                    "Two tasks with same TID in user space!"
-                );
-                // 取出下一个任务
-                let next_task = task_manager.fetch().unwrap();
-                current_task.inner_exclusive_session(|task_inner| {
-                    task_inner.task_status = TaskStatus::Ready;
-                });
-                next_task.inner_exclusive_session(|task_inner| {
-                    task_inner.task_status = TaskStatus::Running;
-                });
-                // unsafe {
-                //     println!("\ncurrent: {}-{}, {:#x?}, next: {}-{}, {:#x?}",
-                //     current_task.id.0, current_task.id.1, *task_cx, next_task.id.0, next_task.id.1, *next_task_cx);
-                // }
+    if let Some(next_task_ref) = vdso_inner.task_manager.peek() {
+        if next_task_ref.id.0 == current_task.id.0 {
+            // 同一地址空间，由用户进行调度
+            assert_ne!(
+                next_task_ref.id.1, current_task.id.1,
+                "Two tasks with same TID in user space!"
+            );
+            // 取出下一个任务
+            let next_task = vdso_inner.task_manager.fetch().unwrap();
+            current_task.inner_exclusive_session(|task_inner| {
+                task_inner.task_status = TaskStatus::Ready;
+            });
+            next_task.inner_exclusive_session(|task_inner| {
+                task_inner.task_status = TaskStatus::Running;
+            });
+            // unsafe {
+            //     println!("\ncurrent: {}-{}, {:#x?}, next: {}-{}, {:#x?}",
+            //     current_task.id.0, current_task.id.1, *task_cx, next_task.id.0, next_task.id.1, *next_task_cx);
+            // }
 
-                // 获取2个TrapContext
-                let current_trap_cx = get_trap_cx_ptr(current_task.id.1);
-                let next_trap_cx = get_trap_cx_ptr(next_task.id.1);
-                // 添加任务到任务管理器
-                task_manager.add(current_task);
-                // 修改当前任务
-                vdso_inner.current_task[current_processor].replace(next_task);
-                drop(vdso_inner); // 释放锁
+            // 获取2个TrapContext
+            let current_trap_cx = get_trap_cx_ptr(current_task.id.1);
+            let next_trap_cx = get_trap_cx_ptr(next_task.id.1);
+            // 修改当前任务
+            vdso_inner.current_task[current_processor].replace(next_task);
+            // 添加任务到任务管理器
+            vdso_inner.task_manager.add(current_task);
+            
+            drop(vdso_inner); // 释放锁
 
-                unsafe {
-                    // 更新TRAP_CONTEXT_PTR指向当前任务的trap context
-                    (VDSO_TRAP_CONTEXT_PTR_BASE as *mut usize).write(next_trap_cx as usize);
-                }
-                unsafe {
-                    __switch_user(current_trap_cx, next_trap_cx);
-                }
-
-                let vdso_inner = VDSO_DATA.lock();
-                vdso_inner.unblock_sched();
-            } else {
-                // 调用系统调用进行调度
-                vdso_inner.unblock_sched();
-                drop(vdso_inner); // 释放锁
-                sys_yield();
+            unsafe {
+                __switch_user(current_trap_cx, next_trap_cx);
             }
+
+            unsafe {
+                // 更新TRAP_CONTEXT_PTR指向当前任务的trap context
+                (VDSO_TRAP_CONTEXT_PTR_BASE as *mut usize).write(next_trap_cx as usize);
+            }
+
+            let vdso_inner = VDSO_DATA.lock();
+            vdso_inner.unblock_sched();
         } else {
             // 调用系统调用进行调度
             vdso_inner.unblock_sched();
@@ -136,7 +130,10 @@ pub fn user_schedule() {
             sys_yield();
         }
     } else {
-        panic!("No current task in user space!");
+        // 调用系统调用进行调度
+        vdso_inner.unblock_sched();
+        drop(vdso_inner); // 释放锁
+        sys_yield();
     }
 }
 
