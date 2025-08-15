@@ -140,6 +140,23 @@ pub fn user_schedule() {
     }
 }
 
+pub fn user_prior(prior: usize) -> isize {
+    // TODO：多核时判断当前cpu的编号
+    // let current_processor = get_current_processor();
+    let current_processor = 0;
+    assert!(current_processor < PROCESSOR_NUM);
+    let vdso_inner = VDSO_DATA.lock();
+    vdso_inner.block_sched();
+    if let Some(task) = &vdso_inner.current_task[current_processor] {
+        let current_task = task.clone();
+        current_task.inner_exclusive_access().prio = prior;
+    } else {
+        panic!("No current task in user space!");
+    }
+    vdso_inner.unblock_sched();
+    0
+}
+
 #[unsafe(no_mangle)]
 pub extern "C" fn user_schedule_unlock() {
     let vdso_data = unsafe {

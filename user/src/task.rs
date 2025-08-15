@@ -1,4 +1,4 @@
-use crate::task_sched::vdso::user_schedule;
+use crate::task_sched::vdso::{user_prior, user_schedule};
 
 use super::*;
 
@@ -87,5 +87,6 @@ pub fn waittid(tid: usize) -> isize {
 }
 
 pub fn thread_prio(priority: usize) -> isize {
-    sys_thread_prio(priority)
+    // sys_thread_prio(priority)
+    user_prior(priority)
 }
