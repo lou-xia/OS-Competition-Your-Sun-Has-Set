@@ -19,7 +19,7 @@ const SYSCALL_WAITPID: usize = 260;
 const SYSCALL_THREAD_CREATE: usize = 1000;
 const SYSCALL_GETTID: usize = 1001;
 const SYSCALL_WAITTID: usize = 1002;
-const SYSCALL_THREAD_PRIO: usize = 1003; // 新增: 设置线程优先级
+// const SYSCALL_THREAD_PRIO: usize = 1003; // 新增: 设置线程优先级
 const SYSCALL_MUTEX_CREATE: usize = 1010;
 const SYSCALL_MUTEX_LOCK: usize = 1011;
 const SYSCALL_MUTEX_UNLOCK: usize = 1012;
@@ -143,9 +143,9 @@ pub fn sys_waittid(tid: usize) -> isize {
     syscall(SYSCALL_WAITTID, [tid, 0, 0])
 }
 
-pub fn sys_thread_prio(priority: usize) -> isize {
-    syscall(SYSCALL_THREAD_PRIO, [priority, 0, 0])
-}
+// pub fn sys_thread_prio(priority: usize) -> isize {
+//     syscall(SYSCALL_THREAD_PRIO, [priority, 0, 0])
+// }
 
 pub fn sys_mutex_create(blocking: bool) -> isize {
     syscall(SYSCALL_MUTEX_CREATE, [blocking as usize, 0, 0])
