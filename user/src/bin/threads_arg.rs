@@ -17,7 +17,7 @@ fn thread_print(arg: *const Argument) -> ! {
     let arg = unsafe { &*arg };
     for _ in 0..1000 {
         print!("{}", arg.ch);
-        yield_();
+        yield_(); // 修改部分
     }
     exit(arg.rc)
 }

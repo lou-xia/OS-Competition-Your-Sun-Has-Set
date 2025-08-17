@@ -43,15 +43,15 @@ pub struct VdsoData {
 
 impl VdsoData {
     pub fn block_sched(&self) {
-        self.block_sched.store(true, atomic::Ordering::Relaxed);
+        self.block_sched.store(true, atomic::Ordering::SeqCst);
     }
 
     pub fn unblock_sched(&self) {
-        self.block_sched.store(false, atomic::Ordering::Relaxed);
+        self.block_sched.store(false, atomic::Ordering::SeqCst);
     }
 
     pub fn locked(&self) -> bool {
-        self.block_sched.load(atomic::Ordering::Relaxed)
+        self.block_sched.load(atomic::Ordering::SeqCst)
     }
 }
 
@@ -113,12 +113,8 @@ pub fn user_schedule() {
             drop(vdso_inner); // 释放锁
 
             unsafe {
-                __switch_user(current_trap_cx, next_trap_cx);
-            }
-
-            unsafe {
-                // 更新TRAP_CONTEXT_PTR指向当前任务的trap context
                 (VDSO_TRAP_CONTEXT_PTR_BASE as *mut usize).write(next_trap_cx as usize);
+                __switch_user(current_trap_cx, next_trap_cx);
             }
 
             let vdso_inner = VDSO_DATA.lock();

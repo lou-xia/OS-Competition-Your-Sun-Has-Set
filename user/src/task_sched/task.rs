@@ -81,8 +81,6 @@ pub struct TaskContext {
     ra: usize,
     sp: usize,
     s: [usize; 12],
-    sepc: usize,
-    user_sp: usize,
 }
 
 impl TaskContext {
@@ -91,8 +89,6 @@ impl TaskContext {
             ra: 0,
             sp: 0,
             s: [0; 12],
-            sepc: 0,
-            user_sp: 0,
         }
     }
 }
